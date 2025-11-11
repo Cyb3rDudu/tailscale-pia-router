@@ -120,24 +120,18 @@
                                         <span :class="device.online ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'" class="px-2 py-1 text-xs rounded-full" x-text="device.online ? 'Online' : 'Offline'"></span>
                                     </td>
                                     <td class="px-6 py-4">
-                                        <!-- Region selector only for headless devices -->
-                                        <template x-if="!device.auto_managed">
-                                            <select
-                                                @change="setDeviceRegion(device.id, $event.target.value)"
-                                                class="text-sm rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                                                <option value="">-- Select region --</option>
-                                                <template x-for="region in regions" :key="region.id">
-                                                    <option :value="region.id" :selected="device.region_id === region.id" x-text="`${region.name} (${region.country})`"></option>
-                                                </template>
-                                            </select>
-                                        </template>
-                                        <!-- Show "Auto" for GUI devices -->
-                                        <template x-if="device.auto_managed">
-                                            <span class="text-sm text-gray-500 dark:text-gray-400 italic">Auto (any VPN)</span>
-                                        </template>
+                                        <!-- Region selector for all devices -->
+                                        <select
+                                            @change="setDeviceRegion(device.id, $event.target.value)"
+                                            class="text-sm rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                            <option value="">-- Select region --</option>
+                                            <template x-for="region in regions" :key="region.id">
+                                                <option :value="region.id" :selected="device.region_id === region.id" x-text="`${region.name} (${region.country})`"></option>
+                                            </template>
+                                        </select>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <!-- Manual toggle only for headless devices -->
+                                        <!-- Toggle only for servers (Linux/headless) -->
                                         <template x-if="!device.auto_managed">
                                             <label class="relative inline-flex items-center cursor-pointer">
                                                 <input
@@ -150,7 +144,7 @@
                                         </template>
                                         <!-- Show auto status for GUI devices -->
                                         <template x-if="device.auto_managed">
-                                            <span :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'" class="text-sm" x-text="device.routing_enabled ? 'Auto (On)' : 'Auto (Off)'"></span>
+                                            <span :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'" class="text-sm font-medium" x-text="device.routing_enabled ? 'Enabled' : 'Disabled'"></span>
                                         </template>
                                     </td>
                                 </tr>
@@ -319,8 +313,10 @@
                         } else {
                             const data = await response.json();
                             await this.loadDevices();
-                            if (data.message) {
-                                console.log(data.message);
+                            await this.loadVPNStatus(); // Refresh VPN status to show new region
+                            // Show message briefly if it contains exit node instructions
+                            if (data.message && data.message.includes('Tailscale app')) {
+                                console.log('✓ ' + data.message);
                             }
                         }
                     } catch (error) {

@@ -281,6 +281,9 @@ async def toggle_device_routing(device_id: str, toggle: DeviceRoutingToggle) -> 
 async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -> SuccessResponse:
     """Set PIA region for a specific device.
 
+    For GUI devices (macOS/iOS): Auto-enables routing when region is selected.
+    For servers (Linux): Only updates region, routing must be manually toggled.
+
     Args:
         device_id: Tailscale device ID
         region_select: Region selection
@@ -302,9 +305,16 @@ async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -
         # Update region in database
         await DeviceRoutingDB.set_region(device_id, region_select.region_id)
 
-        # If routing is currently enabled, we need to reconnect with the new region
+        # Check device type
+        device_os = device.get("os", "").lower()
+        is_gui_device = device_os in ["macos", "ios"]
+
+        # For GUI devices, auto-enable routing when region is selected
+        # For servers, only update routing if already enabled
         routing_enabled = await DeviceRoutingDB.is_enabled(device_id)
-        if routing_enabled:
+        should_enable_routing = is_gui_device or routing_enabled
+
+        if should_enable_routing:
             # Get PIA credentials
             from app.models import SettingsDB
             pia_credentials = await SettingsDB.get_json("pia_credentials")
@@ -337,7 +347,13 @@ async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -
             pia_interface = pia_service._get_interface_name(region_select.region_id)
             await routing_service.enable_device_routing(device_ip, pia_interface)
 
-            logger.info(f"Updated routing for {device['hostname']} to use region {region['name']}")
+            # Mark routing as enabled in database
+            await DeviceRoutingDB.set_enabled(device_id, True)
+
+            if is_gui_device:
+                logger.info(f"Auto-enabled routing for GUI device {device['hostname']} to use region {region['name']}")
+            else:
+                logger.info(f"Updated routing for {device['hostname']} to use region {region['name']}")
 
         # Log event
         await ConnectionLogDB.add(
@@ -347,9 +363,13 @@ async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -
             message=f"Region set to {region['name']} for device {device['hostname']}"
         )
 
-        return SuccessResponse(
-            message=f"Region set to {region['name']} for device {device['hostname']}"
-        )
+        # Prepare response message
+        if is_gui_device and should_enable_routing:
+            message = f"Region set to {region['name']} and routing auto-enabled for {device['hostname']}. Select exit node in Tailscale app."
+        else:
+            message = f"Region set to {region['name']} for device {device['hostname']}"
+
+        return SuccessResponse(message=message)
 
     except HTTPException:
         raise
