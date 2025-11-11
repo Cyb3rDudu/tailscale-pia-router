@@ -37,14 +37,12 @@ async def save_pia_credentials(credentials: PIACredentials) -> SuccessResponse:
         Success response
     """
     try:
-        # Test credentials by getting a token
-        pia_service = get_pia_service()
-        token = await pia_service.get_auth_token(
-            credentials.username,
-            credentials.password
-        )
+        # Basic validation - just check credentials are not empty
+        if not credentials.username or not credentials.password:
+            raise ValueError("Username and password are required")
 
         # Save credentials to database
+        # Note: Credentials will be validated when connecting to VPN
         await SettingsDB.set_json("pia_credentials", {
             "username": credentials.username,
             "password": credentials.password
@@ -53,7 +51,7 @@ async def save_pia_credentials(credentials: PIACredentials) -> SuccessResponse:
         # Log event
         await ConnectionLogDB.add("config", "success", message="PIA credentials saved")
 
-        logger.info("PIA credentials saved and validated")
+        logger.info("PIA credentials saved")
         return SuccessResponse(message="PIA credentials saved successfully")
 
     except Exception as e:
@@ -243,18 +241,13 @@ async def select_region(selection: RegionSelect) -> SuccessResponse:
         if not credentials:
             raise HTTPException(status_code=400, detail="PIA credentials not configured")
 
-        # Get auth token
-        pia_service = get_pia_service()
-        token = await pia_service.get_auth_token(
-            credentials["username"],
-            credentials["password"]
-        )
-
         # Generate WireGuard config
+        pia_service = get_pia_service()
         config = await pia_service.generate_wireguard_config(
             selection.region_id,
             region,
-            token
+            credentials["username"],
+            credentials["password"]
         )
 
         # Write config

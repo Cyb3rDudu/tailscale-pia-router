@@ -130,14 +130,16 @@ class PIAService:
         self,
         region_id: str,
         region_data: Dict,
-        token: str
+        username: str = None,
+        password: str = None
     ) -> str:
         """Generate WireGuard configuration for a region.
 
         Args:
             region_id: PIA region ID
             region_data: Region data from database
-            token: PIA authentication token
+            username: PIA username (optional, for future use)
+            password: PIA password (optional, for future use)
 
         Returns:
             WireGuard configuration content
