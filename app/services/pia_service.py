@@ -202,12 +202,14 @@ class PIAService:
                 logger.info("Attempting token-based authentication")
                 token = await self.get_auth_token(username, password)
 
+                # Connect to IP address but set Host header for proper routing
                 addkey_response = await self.client.get(
-                    f"https://{server_cn}:1337/addKey",
+                    f"https://{server_ip}:1337/addKey",
                     params={
                         "pt": token,
                         "pubkey": public_key
                     },
+                    headers={"Host": f"{server_cn}:1337"},
                     timeout=10.0
                 )
                 addkey_response.raise_for_status()
@@ -220,11 +222,13 @@ class PIAService:
                 logger.info("Falling back to direct Basic Auth")
 
                 # Method 2: Try Basic Auth directly with WireGuard server
+                # Connect to IP address to bypass DNS issues
                 try:
                     addkey_response = await self.client.get(
-                        f"https://{server_cn}:1337/addKey",
+                        f"https://{server_ip}:1337/addKey",
                         params={"pubkey": public_key},
                         auth=(username, password),
+                        headers={"Host": f"{server_cn}:1337"},
                         timeout=10.0
                     )
                     addkey_response.raise_for_status()
