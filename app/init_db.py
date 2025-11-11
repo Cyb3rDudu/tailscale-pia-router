@@ -1,7 +1,7 @@
 """Database initialization script."""
 
 import asyncio
-from models.database import init_database
+from app.models.database import init_database
 
 
 async def main():
