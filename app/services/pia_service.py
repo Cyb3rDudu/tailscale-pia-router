@@ -170,9 +170,6 @@ class PIAService:
             WireGuard configuration content
         """
         try:
-            # Get PIA token first
-            token = await self.get_auth_token(username, password)
-
             # Generate WireGuard keys
             private_key, public_key = self._generate_wireguard_keys()
 
@@ -192,9 +189,19 @@ class PIAService:
                 raise ValueError(f"No server IP or CN found for region {region_id}")
 
             # Call PIA's /addKey endpoint to register our public key and get server details
-            # This is the official PIA method from their manual-connections script
+            # Try two authentication methods:
+            # 1. Token-based (official method, requires token API access)
+            # 2. Basic Auth with username/password (fallback for blocked networks)
             logger.info(f"Registering with PIA WireGuard server {server_cn} ({server_ip})")
+
+            addkey_data = None
+            auth_method = None
+
+            # Method 1: Try token-based authentication
             try:
+                logger.info("Attempting token-based authentication")
+                token = await self.get_auth_token(username, password)
+
                 addkey_response = await self.client.get(
                     f"https://{server_cn}:1337/addKey",
                     params={
@@ -205,27 +212,56 @@ class PIAService:
                 )
                 addkey_response.raise_for_status()
                 addkey_data = addkey_response.json()
-
-                if addkey_data.get("status") != "OK":
-                    raise ValueError(f"PIA addKey returned non-OK status: {addkey_data}")
-
-                # Extract server details from response
-                server_public_key = addkey_data.get("server_key")
-                peer_ip = addkey_data.get("peer_ip")
-                server_port = addkey_data.get("server_port", 1337)
-                dns_servers = addkey_data.get("dns_servers", [])
-
-                if not server_public_key:
-                    raise ValueError(f"No server_key in addKey response: {addkey_data}")
-
-                if not peer_ip:
-                    raise ValueError(f"No peer_ip in addKey response: {addkey_data}")
-
-                logger.info(f"Successfully registered with PIA server, assigned IP: {peer_ip}")
+                auth_method = "token"
+                logger.info("Token-based authentication successful")
 
             except Exception as e:
-                logger.error(f"Failed to call PIA addKey endpoint: {e}")
-                raise
+                logger.warning(f"Token-based authentication failed: {e}")
+                logger.info("Falling back to direct Basic Auth")
+
+                # Method 2: Try Basic Auth directly with WireGuard server
+                try:
+                    addkey_response = await self.client.get(
+                        f"https://{server_cn}:1337/addKey",
+                        params={"pubkey": public_key},
+                        auth=(username, password),
+                        timeout=10.0
+                    )
+                    addkey_response.raise_for_status()
+                    addkey_data = addkey_response.json()
+                    auth_method = "basic"
+                    logger.info("Basic Auth authentication successful")
+
+                except Exception as e2:
+                    logger.error(f"Basic Auth also failed: {e2}")
+                    raise Exception(
+                        f"Both authentication methods failed. "
+                        f"Token error: {e}. Basic Auth error: {e2}"
+                    )
+
+            # Validate response
+            if not addkey_data:
+                raise ValueError("Failed to authenticate with PIA server")
+
+            if addkey_data.get("status") != "OK":
+                raise ValueError(f"PIA addKey returned non-OK status: {addkey_data}")
+
+            # Extract server details from response
+            server_public_key = addkey_data.get("server_key")
+            peer_ip = addkey_data.get("peer_ip")
+            server_port = addkey_data.get("server_port", 1337)
+            dns_servers = addkey_data.get("dns_servers", [])
+
+            if not server_public_key:
+                raise ValueError(f"No server_key in addKey response: {addkey_data}")
+
+            if not peer_ip:
+                raise ValueError(f"No peer_ip in addKey response: {addkey_data}")
+
+            logger.info(
+                f"Successfully registered with PIA server using {auth_method} auth, "
+                f"assigned IP: {peer_ip}"
+            )
 
             # Use endpoint from response or fallback
             endpoint = f"{server_ip}:{server_port}"
