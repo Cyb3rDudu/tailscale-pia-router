@@ -143,21 +143,24 @@ class PIAService:
         self,
         region_id: str,
         region_data: Dict,
-        username: str = None,
-        password: str = None
+        username: str,
+        password: str
     ) -> str:
         """Generate WireGuard configuration for a region.
 
         Args:
             region_id: PIA region ID
             region_data: Region data from database
-            username: PIA username (optional, for future use)
-            password: PIA password (optional, for future use)
+            username: PIA username
+            password: PIA password
 
         Returns:
             WireGuard configuration content
         """
         try:
+            # Get PIA token first
+            token = await self.get_auth_token(username, password)
+
             # Generate WireGuard keys
             private_key, public_key = self._generate_wireguard_keys()
 
@@ -173,70 +176,59 @@ class PIAService:
             server_ip = server.get("ip")
             server_cn = server.get("cn")
 
-            if not server_ip:
-                raise ValueError(f"No server IP found for region {region_id}")
+            if not server_ip or not server_cn:
+                raise ValueError(f"No server IP or CN found for region {region_id}")
 
-            # Fetch server public key from meta server
-            meta_servers = servers.get("meta", [])
-            if not meta_servers:
-                raise ValueError(f"No meta servers found for region {region_id}")
-
-            # Try fetching public key from meta servers (try all if first fails)
-            server_public_key = None
-            for meta_server in meta_servers:
-                meta_ip = meta_server.get("ip")
-                if not meta_ip:
-                    continue
-
-                try:
-                    logger.debug(f"Fetching public key from meta server {meta_ip}")
-                    meta_response = await self.client.get(
-                        f"https://{meta_ip}:443/",
-                        timeout=10.0,
-                        follow_redirects=True
-                    )
-                    meta_response.raise_for_status()
-                    meta_data = meta_response.json()
-
-                    # Try different key names that PIA might use
-                    server_public_key = (
-                        meta_data.get("server_key") or
-                        meta_data.get("pubkey") or
-                        meta_data.get("public_key") or
-                        meta_data.get("wg_pubkey")
-                    )
-
-                    if server_public_key:
-                        logger.info(f"Successfully fetched public key from {meta_ip}")
-                        break
-                    else:
-                        logger.warning(f"Meta server {meta_ip} returned no public key: {meta_data}")
-
-                except Exception as e:
-                    logger.warning(f"Failed to fetch from meta server {meta_ip}: {e}")
-                    continue
-
-            # Fallback: Try to get public key from server data
-            if not server_public_key:
-                logger.warning(f"Could not fetch from meta servers, trying fallback")
-                server_public_key = server.get("pk") or server.get("pubkey")
-
-            if not server_public_key:
-                raise ValueError(
-                    f"No server public key found for region {region_id}. "
-                    f"Tried {len(meta_servers)} meta servers and server data fallback."
+            # Call PIA's /addKey endpoint to register our public key and get server details
+            # This is the official PIA method from their manual-connections script
+            logger.info(f"Registering with PIA WireGuard server {server_cn} ({server_ip})")
+            try:
+                addkey_response = await self.client.get(
+                    f"https://{server_cn}:1337/addKey",
+                    params={
+                        "pt": token,
+                        "pubkey": public_key
+                    },
+                    timeout=10.0
                 )
+                addkey_response.raise_for_status()
+                addkey_data = addkey_response.json()
 
-            endpoint = f"{server_ip}:1337"
+                if addkey_data.get("status") != "OK":
+                    raise ValueError(f"PIA addKey returned non-OK status: {addkey_data}")
 
-            # DNS servers
-            dns_servers = region_data.get("dns", "209.222.18.222,209.222.18.218")
+                # Extract server details from response
+                server_public_key = addkey_data.get("server_key")
+                peer_ip = addkey_data.get("peer_ip")
+                server_port = addkey_data.get("server_port", 1337)
+                dns_servers = addkey_data.get("dns_servers", [])
 
-            # Generate config
+                if not server_public_key:
+                    raise ValueError(f"No server_key in addKey response: {addkey_data}")
+
+                if not peer_ip:
+                    raise ValueError(f"No peer_ip in addKey response: {addkey_data}")
+
+                logger.info(f"Successfully registered with PIA server, assigned IP: {peer_ip}")
+
+            except Exception as e:
+                logger.error(f"Failed to call PIA addKey endpoint: {e}")
+                raise
+
+            # Use endpoint from response or fallback
+            endpoint = f"{server_ip}:{server_port}"
+
+            # Use DNS servers from response, fallback to region data or PIA defaults
+            if dns_servers:
+                dns_setting = ",".join(dns_servers)
+            else:
+                dns_setting = region_data.get("dns", "209.222.18.222,209.222.18.218")
+
+            # Generate config using values from PIA's addKey response
             config = f"""[Interface]
 PrivateKey = {private_key}
-Address = 10.0.0.2/32
-DNS = {dns_servers}
+Address = {peer_ip}
+DNS = {dns_setting}
 
 [Peer]
 PublicKey = {server_public_key}
