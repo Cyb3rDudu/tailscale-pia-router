@@ -162,20 +162,30 @@ class RoutingService:
                 logger.info(f"Added routing rule for {device_ip} to use table {table_id}")
 
             # Add default route via PIA in table 100
+            # Check if route already exists (table might not exist yet, that's OK)
             result = subprocess.run(
                 ["ip", "route", "show", "table", str(table_id)],
                 capture_output=True,
                 text=True,
-                check=True
+                check=False
             )
 
-            if "default dev pia" not in result.stdout:
-                subprocess.run(
+            # Add route if it doesn't exist or table doesn't exist yet
+            if result.returncode != 0 or "default dev pia" not in result.stdout:
+                # Try to add the route (will create table if it doesn't exist)
+                result = subprocess.run(
                     ["ip", "route", "add", "default", "dev", PIA_INTERFACE, "table", str(table_id)],
-                    check=True,
-                    capture_output=True
+                    capture_output=True,
+                    text=True,
+                    check=False
                 )
-                logger.info(f"Added default route via PIA in table {table_id}")
+
+                # If it failed because route already exists, that's OK
+                if result.returncode == 0:
+                    logger.info(f"Added default route via PIA in table {table_id}")
+                elif "File exists" not in result.stderr:
+                    # Only raise if it's not a "route exists" error
+                    raise subprocess.CalledProcessError(result.returncode, result.args, result.stderr)
 
             # Add MASQUERADE rule for NAT
             result = subprocess.run(

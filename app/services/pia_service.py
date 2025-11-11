@@ -297,29 +297,105 @@ PersistentKeepalive = 25
             raise
 
     async def write_wireguard_config(self, config: str):
-        """Write WireGuard configuration to file.
+        """Create/update WireGuard connection in NetworkManager.
 
         Args:
             config: WireGuard configuration content
         """
         try:
-            # Ensure directory exists
-            WG_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            # Parse config to extract key parameters
+            private_key = None
+            address = None
+            dns = None
+            endpoint = None
+            public_key = None
+            allowed_ips = None
+            keepalive = None
 
-            # Write config
-            WG_CONFIG_PATH.write_text(config)
+            for line in config.split('\n'):
+                line = line.strip()
+                if line.startswith('PrivateKey'):
+                    private_key = line.split('=', 1)[1].strip()
+                elif line.startswith('Address'):
+                    address = line.split('=', 1)[1].strip()
+                elif line.startswith('DNS'):
+                    dns = line.split('=', 1)[1].strip()
+                elif line.startswith('Endpoint'):
+                    endpoint = line.split('=', 1)[1].strip()
+                elif line.startswith('PublicKey'):
+                    public_key = line.split('=', 1)[1].strip()
+                elif line.startswith('AllowedIPs'):
+                    allowed_ips = line.split('=', 1)[1].strip()
+                elif line.startswith('PersistentKeepalive'):
+                    keepalive = line.split('=', 1)[1].strip()
 
-            # Set permissions (only root can read)
-            WG_CONFIG_PATH.chmod(0o600)
+            if not all([private_key, address, endpoint, public_key]):
+                raise ValueError("Missing required WireGuard parameters")
 
-            logger.info(f"Wrote WireGuard config to {WG_CONFIG_PATH}")
+            # Convert DNS to NetworkManager format (semicolon-separated)
+            dns_nm = dns.replace(',', ';').replace(' ', '') if dns else ""
+
+            # Generate UUID for connection
+            import uuid
+            conn_uuid = str(uuid.uuid4())
+
+            # Create NetworkManager keyfile format configuration
+            nm_config = f"""[connection]
+id={WG_INTERFACE}
+uuid={conn_uuid}
+type=wireguard
+interface-name={WG_INTERFACE}
+
+[wireguard]
+private-key={private_key}
+
+[wireguard-peer.{public_key}]
+endpoint={endpoint}
+allowed-ips={allowed_ips};
+persistent-keepalive={keepalive}
+
+[ipv4]
+address1={address}
+{f'dns={dns_nm};' if dns_nm else ''}
+{f'ignore-auto-dns=true' if dns_nm else ''}
+method=manual
+never-default=yes
+
+[ipv6]
+addr-gen-mode=default
+method=disabled
+
+[proxy]
+"""
+
+            # Write configuration to NetworkManager system-connections directory
+            nm_conn_path = Path(f"/etc/NetworkManager/system-connections/{WG_INTERFACE}.nmconnection")
+
+            # Ensure NetworkManager directory exists
+            nm_conn_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write the configuration
+            nm_conn_path.write_text(nm_config)
+
+            # Set correct permissions (NetworkManager requires 0600)
+            nm_conn_path.chmod(0o600)
+
+            logger.info(f"Wrote NetworkManager WireGuard configuration to {nm_conn_path}")
+
+            # Reload NetworkManager to pick up the new connection
+            subprocess.run(
+                ["nmcli", "connection", "reload"],
+                check=True,
+                capture_output=True
+            )
+            logger.info("Reloaded NetworkManager connections")
 
         except Exception as e:
-            logger.error(f"Failed to write WireGuard config: {e}")
+            logger.error(f"Failed to configure WireGuard in NetworkManager: {e}")
             raise
 
     async def connect(self) -> bool:
-        """Connect to PIA VPN via WireGuard.
+        """Connect to PIA VPN via NetworkManager.
 
         Returns:
             True if connection successful
@@ -332,15 +408,15 @@ PersistentKeepalive = 25
                 capture_output=True
             )
 
-            # Bring up WireGuard interface
+            # Bring up WireGuard connection via NetworkManager
             result = subprocess.run(
-                ["wg-quick", "up", WG_INTERFACE],
+                ["nmcli", "connection", "up", WG_INTERFACE],
                 capture_output=True,
                 text=True,
                 check=True
             )
 
-            logger.info(f"PIA VPN connected: {result.stdout}")
+            logger.info(f"PIA VPN connected via NetworkManager: {result.stdout}")
             return True
 
         except subprocess.CalledProcessError as e:
@@ -348,25 +424,25 @@ PersistentKeepalive = 25
             return False
 
     async def disconnect(self) -> bool:
-        """Disconnect from PIA VPN.
+        """Disconnect from PIA VPN via NetworkManager.
 
         Returns:
             True if disconnection successful
         """
         try:
             result = subprocess.run(
-                ["wg-quick", "down", WG_INTERFACE],
+                ["nmcli", "connection", "down", WG_INTERFACE],
                 capture_output=True,
                 text=True,
                 check=True
             )
 
-            logger.info(f"PIA VPN disconnected: {result.stdout}")
+            logger.info(f"PIA VPN disconnected via NetworkManager: {result.stdout}")
             return True
 
         except subprocess.CalledProcessError as e:
-            # If interface doesn't exist, that's fine
-            if "does not exist" in e.stderr or "Cannot find device" in e.stderr:
+            # If connection doesn't exist or already down, that's fine
+            if "not an active connection" in e.stderr.lower() or "no active connection" in e.stderr.lower():
                 logger.info("PIA VPN already disconnected")
                 return True
 
@@ -374,20 +450,23 @@ PersistentKeepalive = 25
             return False
 
     async def get_status(self) -> Dict:
-        """Get PIA VPN connection status.
+        """Get PIA VPN connection status from NetworkManager.
 
         Returns:
             Status dictionary with connection info
         """
         try:
+            # Check if connection is active
             result = subprocess.run(
-                ["wg", "show", WG_INTERFACE],
+                ["nmcli", "connection", "show", "--active"],
                 capture_output=True,
                 text=True,
-                check=False
+                check=True
             )
 
-            if result.returncode != 0:
+            is_active = WG_INTERFACE in result.stdout
+
+            if not is_active:
                 return {
                     "connected": False,
                     "interface": None,
@@ -396,9 +475,13 @@ PersistentKeepalive = 25
                     "transfer": None
                 }
 
-            # Parse wg show output
-            output = result.stdout
-            lines = output.strip().split("\n")
+            # Get detailed connection info
+            detail_result = subprocess.run(
+                ["nmcli", "connection", "show", WG_INTERFACE],
+                capture_output=True,
+                text=True,
+                check=True
+            )
 
             status = {
                 "connected": True,
@@ -408,14 +491,35 @@ PersistentKeepalive = 25
                 "transfer": None
             }
 
-            for line in lines:
-                line = line.strip()
-                if line.startswith("endpoint:"):
-                    status["endpoint"] = line.split("endpoint:", 1)[1].strip()
-                elif line.startswith("latest handshake:"):
-                    status["latest_handshake"] = line.split("latest handshake:", 1)[1].strip()
-                elif line.startswith("transfer:"):
-                    status["transfer"] = line.split("transfer:", 1)[1].strip()
+            # Parse nmcli output for endpoint
+            for line in detail_result.stdout.split('\n'):
+                if 'wireguard.peer' in line.lower() and 'endpoint' in line.lower():
+                    # Extract endpoint from peer configuration
+                    parts = line.split(':')
+                    if len(parts) > 1:
+                        peer_data = parts[1].strip()
+                        if 'endpoint=' in peer_data:
+                            endpoint_part = peer_data.split('endpoint=')[1].split(',')[0]
+                            status["endpoint"] = endpoint_part.strip()
+
+            # Try to get WireGuard stats if wg command is available
+            try:
+                wg_result = subprocess.run(
+                    ["wg", "show", WG_INTERFACE],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
+
+                if wg_result.returncode == 0:
+                    for line in wg_result.stdout.split('\n'):
+                        line = line.strip()
+                        if line.startswith("latest handshake:"):
+                            status["latest_handshake"] = line.split("latest handshake:", 1)[1].strip()
+                        elif line.startswith("transfer:"):
+                            status["transfer"] = line.split("transfer:", 1)[1].strip()
+            except:
+                pass  # WireGuard stats are optional
 
             return status
 
