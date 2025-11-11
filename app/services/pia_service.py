@@ -4,7 +4,6 @@ import asyncio
 import httpx
 import json
 import subprocess
-import base64
 from pathlib import Path
 from typing import Optional, Dict, List
 from datetime import datetime
@@ -87,11 +86,14 @@ class PIAService:
             Authentication token
         """
         try:
-            # Use basic auth
-            auth = base64.b64encode(f"{username}:{password}".encode()).decode()
-            headers = {"Authorization": f"Basic {auth}"}
-
-            response = await self.client.post(PIA_TOKEN_URL, headers=headers)
+            # Use form data (official PIA method)
+            response = await self.client.post(
+                PIA_TOKEN_URL,
+                data={
+                    "username": username,
+                    "password": password
+                }
+            )
             response.raise_for_status()
 
             data = response.json()
