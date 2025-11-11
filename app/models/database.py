@@ -222,16 +222,34 @@ class DeviceRoutingDB:
         """Set routing enabled status for a device."""
         db = await get_db()
         try:
-            if region_id:
+            # Check if row exists
+            async with db.execute(
+                "SELECT 1 FROM device_routing WHERE device_id = ?",
+                (device_id,)
+            ) as cursor:
+                exists = await cursor.fetchone()
+
+            if exists:
+                # Update existing row, preserving region_id if not provided
+                if region_id:
+                    await db.execute("""
+                        UPDATE device_routing
+                        SET enabled = ?, region_id = ?, updated_at = ?
+                        WHERE device_id = ?
+                    """, (enabled, region_id, datetime.utcnow().isoformat(), device_id))
+                else:
+                    await db.execute("""
+                        UPDATE device_routing
+                        SET enabled = ?, updated_at = ?
+                        WHERE device_id = ?
+                    """, (enabled, datetime.utcnow().isoformat(), device_id))
+            else:
+                # Insert new row
                 await db.execute("""
-                    INSERT OR REPLACE INTO device_routing (device_id, enabled, region_id, updated_at)
+                    INSERT INTO device_routing (device_id, enabled, region_id, updated_at)
                     VALUES (?, ?, ?, ?)
                 """, (device_id, enabled, region_id, datetime.utcnow().isoformat()))
-            else:
-                await db.execute("""
-                    INSERT OR REPLACE INTO device_routing (device_id, enabled, updated_at)
-                    VALUES (?, ?, ?)
-                """, (device_id, enabled, datetime.utcnow().isoformat()))
+
             await db.commit()
         finally:
             await db.close()
@@ -241,10 +259,27 @@ class DeviceRoutingDB:
         """Set the region for a device."""
         db = await get_db()
         try:
-            await db.execute("""
-                INSERT OR REPLACE INTO device_routing (device_id, region_id, updated_at)
-                VALUES (?, ?, ?)
-            """, (device_id, region_id, datetime.utcnow().isoformat()))
+            # Check if row exists
+            async with db.execute(
+                "SELECT 1 FROM device_routing WHERE device_id = ?",
+                (device_id,)
+            ) as cursor:
+                exists = await cursor.fetchone()
+
+            if exists:
+                # Update existing row, preserving enabled state
+                await db.execute("""
+                    UPDATE device_routing
+                    SET region_id = ?, updated_at = ?
+                    WHERE device_id = ?
+                """, (region_id, datetime.utcnow().isoformat(), device_id))
+            else:
+                # Insert new row with enabled=False by default
+                await db.execute("""
+                    INSERT INTO device_routing (device_id, enabled, region_id, updated_at)
+                    VALUES (?, 0, ?, ?)
+                """, (device_id, region_id, datetime.utcnow().isoformat()))
+
             await db.commit()
         finally:
             await db.close()
