@@ -332,14 +332,13 @@ PersistentKeepalive = 25
             if not all([private_key, address, endpoint, public_key]):
                 raise ValueError("Missing required WireGuard parameters")
 
-            # Convert DNS to NetworkManager format (semicolon-separated)
-            dns_nm = dns.replace(',', ';').replace(' ', '') if dns else ""
-
             # Generate UUID for connection
             import uuid
             conn_uuid = str(uuid.uuid4())
 
             # Create NetworkManager keyfile format configuration
+            # NOTE: DNS is intentionally NOT configured to avoid DNS resolution issues
+            # with Tailscale API and other services. The system DNS will be used.
             nm_config = f"""[connection]
 id={WG_INTERFACE}
 uuid={conn_uuid}
@@ -356,8 +355,8 @@ persistent-keepalive={keepalive}
 
 [ipv4]
 address1={address}
-{f'dns={dns_nm};' if dns_nm else ''}
-{f'ignore-auto-dns=true' if dns_nm else ''}
+dns-priority=100
+ignore-auto-dns=yes
 method=manual
 never-default=yes
 

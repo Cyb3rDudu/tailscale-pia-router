@@ -219,18 +219,16 @@ class TailscaleService:
             return []
 
     async def get_devices(self) -> List[Dict]:
-        """Get all Tailscale devices (try API first, fallback to CLI).
+        """Get all Tailscale devices using CLI method.
 
         Returns:
             List of devices
-        """
-        # Try API first if configured
-        if self.api_key:
-            devices = await self.get_devices_from_api()
-            if devices:
-                return devices
 
-        # Fallback to CLI
+        Note: CLI method is used exclusively instead of API to avoid routing issues
+        when PIA VPN is connected (container's traffic would route through VPN,
+        causing intermittent failures to reach api.tailscale.com).
+        """
+        # Use CLI exclusively - more reliable when VPN is connected
         return await self.get_devices_from_cli()
 
     async def is_exit_node_advertised(self) -> bool:
