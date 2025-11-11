@@ -103,6 +103,9 @@ class ConnectionLogEntry(BaseModel):
 class ConnectionLogList(BaseModel):
     """List of connection log entries."""
     entries: List[ConnectionLogEntry]
+    total: int = 0
+    limit: int = 100
+    offset: int = 0
 
 
 # Response Schemas

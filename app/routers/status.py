@@ -159,17 +159,19 @@ async def get_system_health() -> SystemHealth:
 
 
 @router.get("/logs")
-async def get_connection_logs(limit: int = 100) -> ConnectionLogList:
-    """Get recent connection logs.
+async def get_connection_logs(limit: int = 50, offset: int = 0) -> ConnectionLogList:
+    """Get recent connection logs with pagination.
 
     Args:
-        limit: Maximum number of log entries to return
+        limit: Maximum number of log entries to return (default: 50)
+        offset: Number of entries to skip (default: 0)
 
     Returns:
-        List of connection log entries
+        List of connection log entries with pagination metadata
     """
     try:
-        logs = await ConnectionLogDB.get_recent(limit)
+        logs = await ConnectionLogDB.get_recent(limit, offset)
+        total = await ConnectionLogDB.get_count()
 
         entries = [
             ConnectionLogEntry(
@@ -183,7 +185,12 @@ async def get_connection_logs(limit: int = 100) -> ConnectionLogList:
             for log in logs
         ]
 
-        return ConnectionLogList(entries=entries)
+        return ConnectionLogList(
+            entries=entries,
+            total=total,
+            limit=limit,
+            offset=offset
+        )
 
     except Exception as e:
         logger.error(f"Failed to get connection logs: {e}")

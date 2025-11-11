@@ -272,15 +272,26 @@ class ConnectionLogDB:
             await db.close()
 
     @staticmethod
-    async def get_recent(limit: int = 100):
-        """Get recent connection log entries."""
+    async def get_recent(limit: int = 100, offset: int = 0):
+        """Get recent connection log entries with pagination."""
         db = await get_db()
         try:
             async with db.execute(
-                "SELECT * FROM connection_log ORDER BY timestamp DESC LIMIT ?",
-                (limit,)
+                "SELECT * FROM connection_log ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+                (limit, offset)
             ) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
+        finally:
+            await db.close()
+
+    @staticmethod
+    async def get_count():
+        """Get total count of log entries."""
+        db = await get_db()
+        try:
+            async with db.execute("SELECT COUNT(*) as count FROM connection_log") as cursor:
+                row = await cursor.fetchone()
+                return row["count"] if row else 0
         finally:
             await db.close()
