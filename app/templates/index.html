@@ -6,15 +6,20 @@
     <title>Tailscale PIA Router</title>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'media'
+        }
+    </script>
 </head>
-<body class="bg-gray-100" x-data="app()" x-init="init()">
+<body class="bg-gray-100 dark:bg-gray-900" x-data="app()" x-init="init()">
     <div class="min-h-screen">
         <!-- Header -->
-        <header class="bg-white shadow">
+        <header class="bg-white dark:bg-gray-800 shadow">
             <div class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center">
-                    <h1 class="text-3xl font-bold text-gray-900">Tailscale PIA Router</h1>
-                    <a href="/settings" class="text-blue-600 hover:text-blue-800">Settings</a>
+                    <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Tailscale PIA Router</h1>
+                    <a href="/settings" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">Settings</a>
                 </div>
             </div>
         </header>
@@ -23,34 +28,34 @@
             <!-- Status Cards -->
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 <!-- PIA Status Card -->
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold text-gray-900 mb-4">PIA VPN Status</h2>
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">PIA VPN Status</h2>
                     <div class="space-y-2">
                         <div class="flex items-center">
                             <div :class="piaStatus.connected ? 'bg-green-500' : 'bg-red-500'" class="w-3 h-3 rounded-full mr-2"></div>
-                            <span class="text-sm" x-text="piaStatus.connected ? 'Connected' : 'Disconnected'"></span>
+                            <span class="text-sm dark:text-gray-200" x-text="piaStatus.connected ? 'Connected' : 'Disconnected'"></span>
                         </div>
-                        <div x-show="piaStatus.region_name" class="text-sm text-gray-600">
+                        <div x-show="piaStatus.region_name" class="text-sm text-gray-600 dark:text-gray-400">
                             <span class="font-medium">Region:</span> <span x-text="piaStatus.region_name"></span>
                         </div>
-                        <div x-show="piaStatus.ip_address" class="text-sm text-gray-600">
+                        <div x-show="piaStatus.ip_address" class="text-sm text-gray-600 dark:text-gray-400">
                             <span class="font-medium">IP:</span> <span x-text="piaStatus.ip_address"></span>
                         </div>
                     </div>
                 </div>
 
                 <!-- Tailscale Status Card -->
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Tailscale Status</h2>
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Tailscale Status</h2>
                     <div class="space-y-2">
                         <div class="flex items-center">
                             <div :class="tailscaleStatus.running ? 'bg-green-500' : 'bg-red-500'" class="w-3 h-3 rounded-full mr-2"></div>
-                            <span class="text-sm" x-text="tailscaleStatus.running ? 'Running' : 'Not Running'"></span>
+                            <span class="text-sm dark:text-gray-200" x-text="tailscaleStatus.running ? 'Running' : 'Not Running'"></span>
                         </div>
-                        <div x-show="tailscaleStatus.hostname" class="text-sm text-gray-600">
+                        <div x-show="tailscaleStatus.hostname" class="text-sm text-gray-600 dark:text-gray-400">
                             <span class="font-medium">Hostname:</span> <span x-text="tailscaleStatus.hostname"></span>
                         </div>
-                        <div class="text-sm text-gray-600">
+                        <div class="text-sm text-gray-600 dark:text-gray-400">
                             <span class="font-medium">Exit Node:</span>
                             <span x-text="tailscaleStatus.exit_node_enabled ? 'Advertised' : 'Not Advertised'"></span>
                         </div>
@@ -58,27 +63,27 @@
                 </div>
 
                 <!-- System Health Card -->
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold text-gray-900 mb-4">System Health</h2>
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">System Health</h2>
                     <div class="space-y-2">
                         <div class="flex items-center">
                             <div :class="systemHealth.healthy ? 'bg-green-500' : 'bg-yellow-500'" class="w-3 h-3 rounded-full mr-2"></div>
-                            <span class="text-sm" x-text="systemHealth.healthy ? 'Healthy' : 'Issues Detected'"></span>
+                            <span class="text-sm dark:text-gray-200" x-text="systemHealth.healthy ? 'Healthy' : 'Issues Detected'"></span>
                         </div>
                         <template x-for="message in systemHealth.messages" :key="message">
-                            <div class="text-xs text-gray-600" x-text="message"></div>
+                            <div class="text-xs text-gray-600 dark:text-gray-400" x-text="message"></div>
                         </template>
                     </div>
                 </div>
             </div>
 
             <!-- Region Selection & Connection Control -->
-            <div class="bg-white rounded-lg shadow p-6 mb-6">
-                <h2 class="text-lg font-semibold text-gray-900 mb-4">VPN Control</h2>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">VPN Control</h2>
                 <div class="flex flex-col sm:flex-row gap-4">
                     <div class="flex-1">
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Select Region</label>
-                        <select x-model="selectedRegion" @change="selectRegion()" class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Region</label>
+                        <select x-model="selectedRegion" @change="selectRegion()" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
                             <option value="">-- Select a region --</option>
                             <template x-for="region in regions" :key="region.id">
                                 <option :value="region.id" x-text="`${region.name} (${region.country})`"></option>
@@ -89,7 +94,7 @@
                         <button
                             @click="toggleConnection()"
                             :disabled="loading || !selectedRegion"
-                            :class="piaStatus.connected ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'"
+                            :class="piaStatus.connected ? 'bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800' : 'bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800'"
                             class="px-6 py-2 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
                             x-text="loading ? 'Please wait...' : (piaStatus.connected ? 'Disconnect' : 'Connect')">
                         </button>
@@ -98,40 +103,40 @@
             </div>
 
             <!-- Device List -->
-            <div class="bg-white rounded-lg shadow p-6">
-                <h2 class="text-lg font-semibold text-gray-900 mb-4">Tailscale Devices</h2>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Tailscale Devices</h2>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead class="bg-gray-50 dark:bg-gray-700">
                             <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP Address</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">OS</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Route via PIA</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Device</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">IP Address</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">OS</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Route via PIA</th>
                             </tr>
                         </thead>
-                        <tbody class="bg-white divide-y divide-gray-200">
+                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                             <template x-for="device in devices" :key="device.id">
                                 <tr>
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm font-medium text-gray-900" x-text="device.hostname"></div>
+                                        <div class="text-sm font-medium text-gray-900 dark:text-white" x-text="device.hostname"></div>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-600" x-text="device.ip_addresses.join(', ')"></div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400" x-text="device.ip_addresses.join(', ')"></div>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm text-gray-600" x-text="device.os || 'Unknown'"></div>
+                                        <div class="text-sm text-gray-600 dark:text-gray-400" x-text="device.os || 'Unknown'"></div>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <span :class="device.online ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'" class="px-2 py-1 text-xs rounded-full" x-text="device.online ? 'Online' : 'Offline'"></span>
+                                        <span :class="device.online ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'" class="px-2 py-1 text-xs rounded-full" x-text="device.online ? 'Online' : 'Offline'"></span>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <!-- Auto-managed devices (macOS/iOS) -->
                                         <template x-if="device.auto_managed">
                                             <div class="flex items-center space-x-2">
-                                                <span :class="device.routing_enabled ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'" class="px-2 py-1 text-xs rounded-full font-medium" x-text="device.routing_enabled ? 'Auto: Enabled' : 'Auto: Disabled'"></span>
-                                                <span class="text-xs text-gray-500">(via PIA status)</span>
+                                                <span :class="device.routing_enabled ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'" class="px-2 py-1 text-xs rounded-full font-medium" x-text="device.routing_enabled ? 'Auto: Enabled' : 'Auto: Disabled'"></span>
+                                                <span class="text-xs text-gray-500 dark:text-gray-400">(via PIA status)</span>
                                             </div>
                                         </template>
                                         <!-- Manual toggle for Linux servers -->
@@ -142,7 +147,7 @@
                                                     :checked="device.routing_enabled"
                                                     @change="toggleDeviceRouting(device.id, $event.target.checked)"
                                                     class="sr-only peer">
-                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                                <div class="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 dark:peer-checked:bg-blue-500"></div>
                                             </label>
                                         </template>
                                     </td>
@@ -150,7 +155,7 @@
                             </template>
                         </tbody>
                     </table>
-                    <div x-show="devices.length === 0" class="text-center py-4 text-gray-500">
+                    <div x-show="devices.length === 0" class="text-center py-4 text-gray-500 dark:text-gray-400">
                         No devices found
                     </div>
                 </div>

@@ -6,58 +6,63 @@
     <title>Settings - Tailscale PIA Router</title>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'media'
+        }
+    </script>
 </head>
-<body class="bg-gray-100" x-data="settings()" x-init="init()">
+<body class="bg-gray-100 dark:bg-gray-900" x-data="settings()" x-init="init()">
     <div class="min-h-screen">
         <!-- Header -->
-        <header class="bg-white shadow">
+        <header class="bg-white dark:bg-gray-800 shadow">
             <div class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center">
-                    <h1 class="text-3xl font-bold text-gray-900">Settings</h1>
-                    <a href="/" class="text-blue-600 hover:text-blue-800">Back to Dashboard</a>
+                    <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
+                    <a href="/" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">Back to Dashboard</a>
                 </div>
             </div>
         </header>
 
         <main class="max-w-4xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
             <!-- Success/Error Messages -->
-            <div x-show="successMessage" x-transition class="mb-6 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+            <div x-show="successMessage" x-transition class="mb-6 bg-green-100 dark:bg-green-900 border border-green-400 dark:border-green-700 text-green-700 dark:text-green-200 px-4 py-3 rounded">
                 <span x-text="successMessage"></span>
             </div>
-            <div x-show="errorMessage" x-transition class="mb-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            <div x-show="errorMessage" x-transition class="mb-6 bg-red-100 dark:bg-red-900 border border-red-400 dark:border-red-700 text-red-700 dark:text-red-200 px-4 py-3 rounded">
                 <span x-text="errorMessage"></span>
             </div>
 
             <!-- PIA Credentials -->
-            <div class="bg-white rounded-lg shadow p-6 mb-6">
-                <h2 class="text-xl font-semibold text-gray-900 mb-4">PIA Credentials</h2>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">PIA Credentials</h2>
                 <form @submit.prevent="savePIACredentials()">
                     <div class="space-y-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Username</label>
                             <input
                                 type="text"
                                 x-model="pia.username"
                                 required
-                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                 placeholder="PIA username (e.g., p1234567)">
                         </div>
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Password</label>
                             <input
                                 type="password"
                                 x-model="pia.password"
                                 required
-                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                 placeholder="PIA password">
                         </div>
-                        <div x-show="pia.configured" class="text-sm text-green-600">
+                        <div x-show="pia.configured" class="text-sm text-green-600 dark:text-green-400">
                             PIA credentials are configured
                         </div>
                         <button
                             type="submit"
                             :disabled="loading"
-                            class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+                            class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-md hover:bg-blue-700 dark:hover:bg-blue-800 disabled:opacity-50">
                             <span x-text="loading ? 'Saving...' : 'Save PIA Credentials'"></span>
                         </button>
                     </div>
@@ -65,29 +70,29 @@
             </div>
 
             <!-- Tailscale API Key -->
-            <div class="bg-white rounded-lg shadow p-6 mb-6">
-                <h2 class="text-xl font-semibold text-gray-900 mb-4">Tailscale API Key</h2>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Tailscale API Key</h2>
                 <form @submit.prevent="saveTailscaleAPIKey()">
                     <div class="space-y-4">
                         <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">API Key</label>
                             <input
                                 type="password"
                                 x-model="tailscale.api_key"
                                 required
-                                class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500"
                                 placeholder="tskey-api-...">
-                            <p class="mt-1 text-sm text-gray-500">
-                                Get your API key from <a href="https://login.tailscale.com/admin/settings/keys" target="_blank" class="text-blue-600 hover:text-blue-800">Tailscale Admin Console</a>
+                            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                                Get your API key from <a href="https://login.tailscale.com/admin/settings/keys" target="_blank" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">Tailscale Admin Console</a>
                             </p>
                         </div>
-                        <div x-show="tailscale.configured" class="text-sm text-green-600">
+                        <div x-show="tailscale.configured" class="text-sm text-green-600 dark:text-green-400">
                             Tailscale API key is configured
                         </div>
                         <button
                             type="submit"
                             :disabled="loading"
-                            class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50">
+                            class="px-4 py-2 bg-blue-600 dark:bg-blue-700 text-white rounded-md hover:bg-blue-700 dark:hover:bg-blue-800 disabled:opacity-50">
                             <span x-text="loading ? 'Saving...' : 'Save Tailscale API Key'"></span>
                         </button>
                     </div>
@@ -95,16 +100,16 @@
             </div>
 
             <!-- Region Management -->
-            <div class="bg-white rounded-lg shadow p-6 mb-6">
-                <h2 class="text-xl font-semibold text-gray-900 mb-4">PIA Regions</h2>
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">PIA Regions</h2>
                 <div class="space-y-4">
-                    <p class="text-sm text-gray-600">
+                    <p class="text-sm text-gray-600 dark:text-gray-400">
                         The PIA server list is automatically fetched when you first load regions. Click the button below to manually refresh the list.
                     </p>
                     <button
                         @click="refreshRegions()"
                         :disabled="loading"
-                        class="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 disabled:opacity-50">
+                        class="px-4 py-2 bg-gray-600 dark:bg-gray-700 text-white rounded-md hover:bg-gray-700 dark:hover:bg-gray-800 disabled:opacity-50">
                         <span x-text="loading ? 'Refreshing...' : 'Refresh Region List'"></span>
                     </button>
                 </div>
