@@ -62,6 +62,35 @@ async def get_pia_status() -> PIAStatus:
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/vpn")
+async def get_vpn_status() -> dict:
+    """Get VPN connection status summary (all active connections).
+
+    Returns:
+        VPN status with active connection count and regions
+    """
+    try:
+        pia_service = get_pia_service()
+        active_connections = await pia_service.get_active_connections()
+
+        # Get region names for active connections
+        region_names = []
+        for conn in active_connections:
+            region_id = conn["region_id"]
+            region = await PIARegionsDB.get_by_id(region_id)
+            if region:
+                region_names.append(region["name"])
+
+        return {
+            "active_count": len(active_connections),
+            "regions": region_names
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get VPN status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/tailscale")
 async def get_tailscale_status() -> TailscaleStatus:
     """Get Tailscale connection status.
