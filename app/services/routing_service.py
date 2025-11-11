@@ -8,6 +8,8 @@ logger = logging.getLogger(__name__)
 
 TAILSCALE_INTERFACE = "tailscale0"
 PIA_INTERFACE = "pia"
+PIA_INTERFACE_PREFIX = "pia-"
+BASE_ROUTING_TABLE = 100  # Start routing tables from 100
 
 
 class RoutingService:
@@ -15,6 +17,8 @@ class RoutingService:
 
     def __init__(self):
         self.enabled_devices: set[str] = set()
+        self.device_table_map: dict[str, int] = {}  # Map device_ip -> table_id
+        self.next_table_id: int = BASE_ROUTING_TABLE
 
     async def enable_ip_forwarding(self) -> bool:
         """Enable IP forwarding.
@@ -128,21 +132,25 @@ class RoutingService:
             logger.error(f"Failed to setup base rules: {e}")
             return False
 
-    async def enable_device_routing(self, device_ip: str) -> bool:
-        """Enable routing for a specific device IP through PIA.
+    async def enable_device_routing(self, device_ip: str, pia_interface: str) -> bool:
+        """Enable routing for a specific device IP through a PIA interface.
 
         Args:
             device_ip: Device IP address
+            pia_interface: PIA interface name (e.g., pia-de, pia-sg)
 
         Returns:
             True if successful
         """
         try:
-            # Add policy routing rule to route this device through PIA
-            # Use routing table 100 for PIA-routed devices
-            table_id = 100
+            # Assign a routing table for this device if not already assigned
+            if device_ip not in self.device_table_map:
+                self.device_table_map[device_ip] = self.next_table_id
+                self.next_table_id += 1
 
-            # Check if route already exists in table 100
+            table_id = self.device_table_map[device_ip]
+
+            # Check if route already exists
             result = subprocess.run(
                 ["ip", "rule", "list"],
                 capture_output=True,
@@ -153,7 +161,7 @@ class RoutingService:
             rule_exists = f"from {device_ip} lookup {table_id}" in result.stdout
 
             if not rule_exists:
-                # Add routing rule: traffic from device_ip should use table 100
+                # Add routing rule: traffic from device_ip should use its assigned table
                 subprocess.run(
                     ["ip", "rule", "add", "from", device_ip, "table", str(table_id)],
                     check=True,
@@ -161,49 +169,47 @@ class RoutingService:
                 )
                 logger.info(f"Added routing rule for {device_ip} to use table {table_id}")
 
-            # Add default route via PIA in table 100
-            # Check if route already exists (table might not exist yet, that's OK)
+            # Clear any existing routes in this table
+            subprocess.run(
+                ["ip", "route", "flush", "table", str(table_id)],
+                capture_output=True,
+                check=False
+            )
+
+            # Add default route via PIA interface in this device's table
             result = subprocess.run(
-                ["ip", "route", "show", "table", str(table_id)],
+                ["ip", "route", "add", "default", "dev", pia_interface, "table", str(table_id)],
                 capture_output=True,
                 text=True,
                 check=False
             )
 
-            # Add route if it doesn't exist or table doesn't exist yet
-            if result.returncode != 0 or "default dev pia" not in result.stdout:
-                # Try to add the route (will create table if it doesn't exist)
-                result = subprocess.run(
-                    ["ip", "route", "add", "default", "dev", PIA_INTERFACE, "table", str(table_id)],
-                    capture_output=True,
-                    text=True,
-                    check=False
-                )
-
-                # If it failed because route already exists, that's OK
-                if result.returncode == 0:
-                    logger.info(f"Added default route via PIA in table {table_id}")
-                elif "File exists" not in result.stderr:
-                    # Only raise if it's not a "route exists" error
-                    raise subprocess.CalledProcessError(result.returncode, result.args, result.stderr)
+            if result.returncode == 0:
+                logger.info(f"Added default route via {pia_interface} in table {table_id} for {device_ip}")
+            elif "File exists" not in result.stderr:
+                # Only raise if it's not a "route exists" error
+                logger.warning(f"Failed to add route for {device_ip}: {result.stderr}")
 
             # Add MASQUERADE rule for NAT
             result = subprocess.run(
-                ["iptables", "-t", "nat", "-C", "POSTROUTING", "-s", device_ip, "-o", PIA_INTERFACE, "-j", "MASQUERADE"],
+                ["iptables", "-t", "nat", "-C", "POSTROUTING", "-s", device_ip, "-o", pia_interface, "-j", "MASQUERADE"],
                 capture_output=True,
                 check=False
             )
 
             if result.returncode != 0:
                 subprocess.run(
-                    ["iptables", "-t", "nat", "-A", "POSTROUTING", "-s", device_ip, "-o", PIA_INTERFACE, "-j", "MASQUERADE"],
+                    ["iptables", "-t", "nat", "-A", "POSTROUTING", "-s", device_ip, "-o", pia_interface, "-j", "MASQUERADE"],
                     check=True,
                     capture_output=True
                 )
-                logger.info(f"Added MASQUERADE rule for {device_ip}")
+                logger.info(f"Added MASQUERADE rule for {device_ip} via {pia_interface}")
+
+            # Add FORWARD rules for this PIA interface if not already present
+            await self.ensure_forward_rules(pia_interface)
 
             self.enabled_devices.add(device_ip)
-            logger.info(f"Successfully enabled PIA routing for device {device_ip}")
+            logger.info(f"Successfully enabled routing for device {device_ip} via {pia_interface}")
             return True
 
         except subprocess.CalledProcessError as e:
@@ -214,13 +220,18 @@ class RoutingService:
         """Disable routing for a specific device IP through PIA.
 
         Args:
-            device_ip: Device_ip address
+            device_ip: Device IP address
 
         Returns:
             True if successful
         """
         try:
-            table_id = 100
+            # Get the table ID for this device
+            if device_ip not in self.device_table_map:
+                logger.warning(f"Device {device_ip} not in routing table map")
+                return True
+
+            table_id = self.device_table_map[device_ip]
 
             # Remove policy routing rule
             subprocess.run(
@@ -230,24 +241,96 @@ class RoutingService:
             )
             logger.info(f"Removed routing rule for {device_ip}")
 
-            # Remove MASQUERADE rule
-            result = subprocess.run(
-                ["iptables", "-t", "nat", "-D", "POSTROUTING", "-s", device_ip, "-o", PIA_INTERFACE, "-j", "MASQUERADE"],
+            # Flush routes in this table
+            subprocess.run(
+                ["ip", "route", "flush", "table", str(table_id)],
                 capture_output=True,
                 check=False
             )
 
-            if result.returncode == 0:
-                logger.info(f"Removed MASQUERADE rule for {device_ip}")
-            else:
-                logger.warning(f"MASQUERADE rule for {device_ip} not found (may already be removed)")
+            # Remove all MASQUERADE rules for this device
+            # We need to iterate and remove because we don't know which interface it was using
+            while True:
+                result = subprocess.run(
+                    ["iptables", "-t", "nat", "-L", "POSTROUTING", "-n", "--line-numbers"],
+                    capture_output=True,
+                    text=True,
+                    check=False
+                )
 
+                found_rule = False
+                for line in result.stdout.split('\n'):
+                    if device_ip in line and "MASQUERADE" in line:
+                        # Extract rule number (first column)
+                        parts = line.split()
+                        if len(parts) > 0 and parts[0].isdigit():
+                            rule_num = parts[0]
+                            subprocess.run(
+                                ["iptables", "-t", "nat", "-D", "POSTROUTING", rule_num],
+                                capture_output=True,
+                                check=False
+                            )
+                            logger.info(f"Removed MASQUERADE rule #{rule_num} for {device_ip}")
+                            found_rule = True
+                            break
+
+                if not found_rule:
+                    break
+
+            # Remove from tracking
+            del self.device_table_map[device_ip]
             self.enabled_devices.discard(device_ip)
             logger.info(f"Successfully disabled PIA routing for device {device_ip}")
             return True
 
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             logger.error(f"Failed to disable routing for device {device_ip}: {e}")
+            return False
+
+    async def ensure_forward_rules(self, pia_interface: str) -> bool:
+        """Ensure FORWARD rules exist for a PIA interface.
+
+        Args:
+            pia_interface: PIA interface name (e.g., pia-de, pia-sg)
+
+        Returns:
+            True if successful
+        """
+        try:
+            # Allow forwarding from Tailscale to PIA interface
+            result = subprocess.run(
+                ["iptables", "-C", "FORWARD", "-i", TAILSCALE_INTERFACE, "-o", pia_interface, "-j", "ACCEPT"],
+                capture_output=True,
+                check=False
+            )
+
+            if result.returncode != 0:
+                subprocess.run(
+                    ["iptables", "-A", "FORWARD", "-i", TAILSCALE_INTERFACE, "-o", pia_interface, "-j", "ACCEPT"],
+                    check=True,
+                    capture_output=True
+                )
+                logger.info(f"Added FORWARD rule Tailscale -> {pia_interface}")
+
+            # Allow return traffic
+            result = subprocess.run(
+                ["iptables", "-C", "FORWARD", "-i", pia_interface, "-o", TAILSCALE_INTERFACE, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
+                capture_output=True,
+                check=False
+            )
+
+            if result.returncode != 0:
+                subprocess.run(
+                    ["iptables", "-A", "FORWARD", "-i", pia_interface, "-o", TAILSCALE_INTERFACE, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
+                    check=True,
+                    capture_output=True
+                )
+                logger.info(f"Added FORWARD rule {pia_interface} -> Tailscale (established)")
+
+            return True
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to ensure forward rules for {pia_interface}: {e}")
             return False
 
     async def clear_device_rules(self) -> bool:

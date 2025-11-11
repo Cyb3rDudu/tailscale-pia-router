@@ -15,6 +15,7 @@ PIA_SERVER_LIST_URL = "https://serverlist.piaservers.net/vpninfo/servers/v6"
 PIA_TOKEN_URL = "https://www.privateinternetaccess.com/api/client/v2/token"
 WG_CONFIG_PATH = Path("/etc/wireguard/pia.conf")
 WG_INTERFACE = "pia"
+WG_INTERFACE_PREFIX = "pia-"  # Prefix for per-region interfaces
 
 
 class PIAService:
@@ -28,6 +29,17 @@ class PIAService:
     async def close(self):
         """Close the HTTP client."""
         await self.client.aclose()
+
+    def _get_interface_name(self, region_id: str) -> str:
+        """Get WireGuard interface name for a region.
+
+        Args:
+            region_id: PIA region ID
+
+        Returns:
+            Interface name (e.g., pia-de, pia-sg)
+        """
+        return f"{WG_INTERFACE_PREFIX}{region_id.lower()}"
 
     async def fetch_server_list(self) -> List[Dict]:
         """Fetch PIA server list from API.
@@ -296,11 +308,12 @@ PersistentKeepalive = 25
             logger.error(f"Failed to generate WireGuard config: {e}")
             raise
 
-    async def write_wireguard_config(self, config: str):
+    async def write_wireguard_config(self, config: str, region_id: str):
         """Create/update WireGuard connection in NetworkManager.
 
         Args:
             config: WireGuard configuration content
+            region_id: PIA region ID for interface naming
         """
         try:
             # Parse config to extract key parameters
@@ -332,6 +345,9 @@ PersistentKeepalive = 25
             if not all([private_key, address, endpoint, public_key]):
                 raise ValueError("Missing required WireGuard parameters")
 
+            # Get interface name for this region
+            interface_name = self._get_interface_name(region_id)
+
             # Generate UUID for connection
             import uuid
             conn_uuid = str(uuid.uuid4())
@@ -340,10 +356,10 @@ PersistentKeepalive = 25
             # NOTE: DNS is intentionally NOT configured to avoid DNS resolution issues
             # with Tailscale API and other services. The system DNS will be used.
             nm_config = f"""[connection]
-id={WG_INTERFACE}
+id={interface_name}
 uuid={conn_uuid}
 type=wireguard
-interface-name={WG_INTERFACE}
+interface-name={interface_name}
 
 [wireguard]
 private-key={private_key}
@@ -368,7 +384,7 @@ method=disabled
 """
 
             # Write configuration to NetworkManager system-connections directory
-            nm_conn_path = Path(f"/etc/NetworkManager/system-connections/{WG_INTERFACE}.nmconnection")
+            nm_conn_path = Path(f"/etc/NetworkManager/system-connections/{interface_name}.nmconnection")
 
             # Ensure NetworkManager directory exists
             nm_conn_path.parent.mkdir(parents=True, exist_ok=True)
@@ -379,7 +395,7 @@ method=disabled
             # Set correct permissions (NetworkManager requires 0600)
             nm_conn_path.chmod(0o600)
 
-            logger.info(f"Wrote NetworkManager WireGuard configuration to {nm_conn_path}")
+            logger.info(f"Wrote NetworkManager WireGuard configuration for {interface_name} to {nm_conn_path}")
 
             # Reload NetworkManager to pick up the new connection
             subprocess.run(
@@ -393,8 +409,73 @@ method=disabled
             logger.error(f"Failed to configure WireGuard in NetworkManager: {e}")
             raise
 
+    async def connect_region(self, region_id: str) -> bool:
+        """Connect to PIA VPN for a specific region via NetworkManager.
+
+        Args:
+            region_id: PIA region ID
+
+        Returns:
+            True if connection successful
+        """
+        try:
+            interface_name = self._get_interface_name(region_id)
+
+            # Enable IP forwarding
+            subprocess.run(
+                ["sysctl", "-w", "net.ipv4.ip_forward=1"],
+                check=True,
+                capture_output=True
+            )
+
+            # Bring up WireGuard connection via NetworkManager
+            result = subprocess.run(
+                ["nmcli", "connection", "up", interface_name],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            logger.info(f"PIA VPN connected to {region_id} via NetworkManager: {result.stdout}")
+            return True
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to connect PIA VPN to {region_id}: {e.stderr}")
+            return False
+
+    async def disconnect_region(self, region_id: str) -> bool:
+        """Disconnect from PIA VPN for a specific region via NetworkManager.
+
+        Args:
+            region_id: PIA region ID
+
+        Returns:
+            True if disconnection successful
+        """
+        try:
+            interface_name = self._get_interface_name(region_id)
+
+            result = subprocess.run(
+                ["nmcli", "connection", "down", interface_name],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            logger.info(f"PIA VPN disconnected from {region_id} via NetworkManager: {result.stdout}")
+            return True
+
+        except subprocess.CalledProcessError as e:
+            # If connection doesn't exist or already down, that's fine
+            if "not an active connection" in e.stderr.lower() or "no active connection" in e.stderr.lower():
+                logger.info(f"PIA VPN to {region_id} already disconnected")
+                return True
+
+            logger.error(f"Failed to disconnect PIA VPN from {region_id}: {e.stderr}")
+            return False
+
     async def connect(self) -> bool:
-        """Connect to PIA VPN via NetworkManager.
+        """Connect to PIA VPN via NetworkManager (legacy single connection).
 
         Returns:
             True if connection successful
@@ -423,7 +504,7 @@ method=disabled
             return False
 
     async def disconnect(self) -> bool:
-        """Disconnect from PIA VPN via NetworkManager.
+        """Disconnect from PIA VPN via NetworkManager (legacy single connection).
 
         Returns:
             True if disconnection successful
@@ -546,6 +627,143 @@ method=disabled
         except Exception as e:
             logger.error(f"Failed to get public IP: {e}")
             return None
+
+    async def get_active_connections(self) -> List[Dict]:
+        """Get list of all active PIA connections.
+
+        Returns:
+            List of active connection info dicts with region_id and interface
+        """
+        try:
+            # Get list of active connections
+            result = subprocess.run(
+                ["nmcli", "connection", "show", "--active"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            active_connections = []
+            for line in result.stdout.split('\n'):
+                if WG_INTERFACE_PREFIX in line:
+                    # Extract connection name (interface name)
+                    parts = line.split()
+                    if len(parts) > 0:
+                        interface_name = parts[0]
+                        # Extract region_id from interface name
+                        if interface_name.startswith(WG_INTERFACE_PREFIX):
+                            region_id = interface_name[len(WG_INTERFACE_PREFIX):]
+                            active_connections.append({
+                                "region_id": region_id,
+                                "interface": interface_name,
+                                "connected": True
+                            })
+
+            logger.info(f"Found {len(active_connections)} active PIA connections")
+            return active_connections
+
+        except Exception as e:
+            logger.error(f"Failed to get active connections: {e}")
+            return []
+
+    async def get_region_status(self, region_id: str) -> Dict:
+        """Get status of a specific region connection.
+
+        Args:
+            region_id: PIA region ID
+
+        Returns:
+            Status dictionary with connection info
+        """
+        try:
+            interface_name = self._get_interface_name(region_id)
+
+            # Check if connection is active
+            result = subprocess.run(
+                ["nmcli", "connection", "show", "--active"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            is_active = interface_name in result.stdout
+
+            return {
+                "region_id": region_id,
+                "interface": interface_name,
+                "connected": is_active
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get region status for {region_id}: {e}")
+            return {
+                "region_id": region_id,
+                "interface": self._get_interface_name(region_id),
+                "connected": False
+            }
+
+    async def ensure_region_connection(
+        self,
+        region_id: str,
+        region_data: Dict,
+        username: str,
+        password: str
+    ) -> bool:
+        """Ensure connection to a region is established.
+
+        Creates config and connects if not already connected.
+
+        Args:
+            region_id: PIA region ID
+            region_data: Region data from database
+            username: PIA username
+            password: PIA password
+
+        Returns:
+            True if connected successfully
+        """
+        try:
+            # Check if already connected
+            status = await self.get_region_status(region_id)
+            if status["connected"]:
+                logger.info(f"Region {region_id} already connected")
+                return True
+
+            # Generate and write config
+            logger.info(f"Establishing connection to region {region_id}")
+            config = await self.generate_wireguard_config(
+                region_id=region_id,
+                region_data=region_data,
+                username=username,
+                password=password
+            )
+            await self.write_wireguard_config(config, region_id)
+
+            # Connect
+            return await self.connect_region(region_id)
+
+        except Exception as e:
+            logger.error(f"Failed to ensure connection to region {region_id}: {e}")
+            return False
+
+    async def cleanup_unused_connections(self, active_regions: List[str]) -> None:
+        """Disconnect and remove connections not in the active regions list.
+
+        Args:
+            active_regions: List of region IDs that should stay connected
+        """
+        try:
+            # Get all active connections
+            all_active = await self.get_active_connections()
+
+            for conn in all_active:
+                region_id = conn["region_id"]
+                if region_id not in active_regions:
+                    logger.info(f"Cleaning up unused connection to {region_id}")
+                    await self.disconnect_region(region_id)
+
+        except Exception as e:
+            logger.error(f"Failed to cleanup unused connections: {e}")
 
 
 # Global service instance

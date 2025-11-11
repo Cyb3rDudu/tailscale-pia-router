@@ -63,8 +63,10 @@ async def init_database():
             CREATE TABLE IF NOT EXISTS device_routing (
                 device_id TEXT PRIMARY KEY,
                 enabled BOOLEAN DEFAULT 0,
+                region_id TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (device_id) REFERENCES tailscale_devices(id)
+                FOREIGN KEY (device_id) REFERENCES tailscale_devices(id),
+                FOREIGN KEY (region_id) REFERENCES pia_regions(id)
             )
         """)
 
@@ -216,15 +218,48 @@ class DeviceRoutingDB:
     """Database operations for device routing configuration."""
 
     @staticmethod
-    async def set_enabled(device_id: str, enabled: bool):
+    async def set_enabled(device_id: str, enabled: bool, region_id: Optional[str] = None):
         """Set routing enabled status for a device."""
         db = await get_db()
         try:
-            await db.execute("""
-                INSERT OR REPLACE INTO device_routing (device_id, enabled, updated_at)
-                VALUES (?, ?, ?)
-            """, (device_id, enabled, datetime.utcnow().isoformat()))
+            if region_id:
+                await db.execute("""
+                    INSERT OR REPLACE INTO device_routing (device_id, enabled, region_id, updated_at)
+                    VALUES (?, ?, ?, ?)
+                """, (device_id, enabled, region_id, datetime.utcnow().isoformat()))
+            else:
+                await db.execute("""
+                    INSERT OR REPLACE INTO device_routing (device_id, enabled, updated_at)
+                    VALUES (?, ?, ?)
+                """, (device_id, enabled, datetime.utcnow().isoformat()))
             await db.commit()
+        finally:
+            await db.close()
+
+    @staticmethod
+    async def set_region(device_id: str, region_id: str):
+        """Set the region for a device."""
+        db = await get_db()
+        try:
+            await db.execute("""
+                INSERT OR REPLACE INTO device_routing (device_id, region_id, updated_at)
+                VALUES (?, ?, ?)
+            """, (device_id, region_id, datetime.utcnow().isoformat()))
+            await db.commit()
+        finally:
+            await db.close()
+
+    @staticmethod
+    async def get_region(device_id: str) -> Optional[str]:
+        """Get the region for a device."""
+        db = await get_db()
+        try:
+            async with db.execute(
+                "SELECT region_id FROM device_routing WHERE device_id = ?",
+                (device_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row["region_id"] if row else None
         finally:
             await db.close()
 
@@ -248,6 +283,20 @@ class DeviceRoutingDB:
         db = await get_db()
         try:
             async with db.execute("SELECT * FROM device_routing") as cursor:
+                rows = await cursor.fetchall()
+                return [dict(row) for row in rows]
+        finally:
+            await db.close()
+
+    @staticmethod
+    async def get_devices_by_region(region_id: str):
+        """Get all devices using a specific region."""
+        db = await get_db()
+        try:
+            async with db.execute(
+                "SELECT * FROM device_routing WHERE region_id = ? AND enabled = 1",
+                (region_id,)
+            ) as cursor:
                 rows = await cursor.fetchall()
                 return [dict(row) for row in rows]
         finally:

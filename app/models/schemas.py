@@ -49,6 +49,8 @@ class TailscaleDevice(BaseModel):
     online: bool = False
     routing_enabled: bool = False
     auto_managed: bool = False  # True for macOS/iOS with automatic routing
+    region_id: Optional[str] = None  # PIA region for this device
+    region_name: Optional[str] = None  # PIA region name for display
 
 
 class TailscaleDeviceList(BaseModel):
@@ -59,6 +61,11 @@ class TailscaleDeviceList(BaseModel):
 class DeviceRoutingToggle(BaseModel):
     """Toggle device routing."""
     enabled: bool
+
+
+class DeviceRegionSelect(BaseModel):
+    """Select region for a device."""
+    region_id: str
 
 
 # Status Schemas

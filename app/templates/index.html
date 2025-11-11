@@ -113,6 +113,7 @@
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">IP Address</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">OS</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Region</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Route via PIA</th>
                             </tr>
                         </thead>
@@ -130,6 +131,24 @@
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <span :class="device.online ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'" class="px-2 py-1 text-xs rounded-full" x-text="device.online ? 'Online' : 'Offline'"></span>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <!-- Auto-managed devices show "Global" -->
+                                        <template x-if="device.auto_managed">
+                                            <span class="text-sm text-gray-500 dark:text-gray-400 italic">Global</span>
+                                        </template>
+                                        <!-- Manual region selector for Linux servers -->
+                                        <template x-if="!device.auto_managed">
+                                            <select
+                                                :value="device.region_id || ''"
+                                                @change="setDeviceRegion(device.id, $event.target.value)"
+                                                class="text-sm rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                                <option value="">-- Select region --</option>
+                                                <template x-for="region in regions" :key="region.id">
+                                                    <option :value="region.id" x-text="`${region.name} (${region.country})`"></option>
+                                                </template>
+                                            </select>
+                                        </template>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <!-- Auto-managed devices (macOS/iOS) -->
@@ -314,6 +333,33 @@
                     } catch (error) {
                         alert('Failed to toggle device routing: ' + error.message);
                         await this.loadDevices(); // Reload to reset checkbox
+                    }
+                },
+
+                async setDeviceRegion(deviceId, regionId) {
+                    if (!regionId) return; // Don't do anything if no region selected
+
+                    try {
+                        const response = await fetch(`/api/devices/${deviceId}/region`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ region_id: regionId })
+                        });
+
+                        if (!response.ok) {
+                            const error = await response.json();
+                            alert('Failed to set device region: ' + error.detail);
+                            await this.loadDevices(); // Reload to reset selector
+                        } else {
+                            const data = await response.json();
+                            await this.loadDevices();
+                            if (data.message) {
+                                console.log(data.message);
+                            }
+                        }
+                    } catch (error) {
+                        alert('Failed to set device region: ' + error.message);
+                        await this.loadDevices(); // Reload to reset selector
                     }
                 }
             }

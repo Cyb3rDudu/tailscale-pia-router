@@ -8,10 +8,12 @@ from app.models import (
     TailscaleDeviceList,
     TailscaleDevice,
     DeviceRoutingToggle,
+    DeviceRegionSelect,
     SuccessResponse,
     TailscaleDevicesDB,
     DeviceRoutingDB,
     ConnectionLogDB,
+    PIARegionsDB,
 )
 from app.services import (
     get_tailscale_service,
@@ -62,16 +64,26 @@ async def get_devices() -> TailscaleDeviceList:
             # Determine if device should be auto-managed (macOS/iOS)
             is_auto_managed = device_os in ["macos", "ios"]
 
-            # Get current routing status
+            # Get current routing status and region
             routing_enabled = await DeviceRoutingDB.is_enabled(device["id"])
+            region_id = await DeviceRoutingDB.get_region(device["id"])
+
+            # Get region name if region is set
+            region_name = None
+            if region_id:
+                region = await PIARegionsDB.get_by_id(region_id)
+                if region:
+                    region_name = region["name"]
 
             # Auto-enable/disable routing for GUI clients based on PIA status
+            # For auto-managed devices, we don't use per-device regions (they use whatever is connected)
             if is_auto_managed:
                 if pia_connected and not routing_enabled:
                     # PIA connected, enable routing
                     device_ip = device["ip_addresses"][0] if device["ip_addresses"] else None
                     if device_ip:
-                        await routing_service.enable_device_routing(device_ip)
+                        # Use the default PIA interface for auto-managed devices
+                        await routing_service.enable_device_routing(device_ip, "pia")
                         await DeviceRoutingDB.set_enabled(device["id"], True)
                         routing_enabled = True
                         logger.info(f"Auto-enabled routing for {device['hostname']} ({device_os})")
@@ -92,7 +104,9 @@ async def get_devices() -> TailscaleDeviceList:
                 last_seen=device.get("last_seen"),
                 online=device["online"],
                 routing_enabled=routing_enabled,
-                auto_managed=is_auto_managed
+                auto_managed=is_auto_managed,
+                region_id=region_id,
+                region_name=region_name
             ))
 
         return TailscaleDeviceList(devices=device_list)
@@ -137,10 +151,42 @@ async def toggle_device_routing(device_id: str, toggle: DeviceRoutingToggle) -> 
 
         # Update routing
         routing_service = get_routing_service()
+        pia_service = get_pia_service()
 
         if toggle.enabled:
-            # Enable routing
-            success = await routing_service.enable_device_routing(device_ip)
+            # Get the device's selected region
+            region_id = await DeviceRoutingDB.get_region(device_id)
+            if not region_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Please select a region for this device first"
+                )
+
+            # Get region data
+            region = await PIARegionsDB.get_by_id(region_id)
+            if not region:
+                raise HTTPException(status_code=404, detail="Selected region not found")
+
+            # Get PIA credentials
+            from app.models import SettingsDB
+            pia_credentials = await SettingsDB.get_json("pia_credentials")
+            if not pia_credentials:
+                raise HTTPException(status_code=400, detail="PIA credentials not configured")
+
+            # Ensure connection to the region
+            success = await pia_service.ensure_region_connection(
+                region_id=region_id,
+                region_data=region,
+                username=pia_credentials["username"],
+                password=pia_credentials["password"]
+            )
+
+            if not success:
+                raise Exception(f"Failed to connect to region {region['name']}")
+
+            # Enable routing with the specific PIA interface
+            pia_interface = pia_service._get_interface_name(region_id)
+            success = await routing_service.enable_device_routing(device_ip, pia_interface)
             action = "enabled"
         else:
             # Disable routing
@@ -235,6 +281,100 @@ async def toggle_device_routing(device_id: str, toggle: DeviceRoutingToggle) -> 
             "device_routing",
             "error",
             message=f"Failed to toggle device routing: {str(e)}"
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{device_id}/region")
+async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -> SuccessResponse:
+    """Set PIA region for a specific device.
+
+    Args:
+        device_id: Tailscale device ID
+        region_select: Region selection
+
+    Returns:
+        Success response
+    """
+    try:
+        # Get device info
+        device = await TailscaleDevicesDB.get_by_id(device_id)
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+
+        # Check if device is auto-managed (macOS/iOS)
+        device_os = device.get("os", "").lower()
+        if device_os in ["macos", "ios"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot set region for {device_os} devices. They use the global PIA connection."
+            )
+
+        # Validate region
+        region = await PIARegionsDB.get_by_id(region_select.region_id)
+        if not region:
+            raise HTTPException(status_code=404, detail="Region not found")
+
+        # Update region in database
+        await DeviceRoutingDB.set_region(device_id, region_select.region_id)
+
+        # If routing is currently enabled, we need to reconnect with the new region
+        routing_enabled = await DeviceRoutingDB.is_enabled(device_id)
+        if routing_enabled:
+            # Get PIA credentials
+            from app.models import SettingsDB
+            pia_credentials = await SettingsDB.get_json("pia_credentials")
+            if not pia_credentials:
+                raise HTTPException(status_code=400, detail="PIA credentials not configured")
+
+            # Parse IP addresses
+            ip_addresses = json.loads(device["ip_addresses"])
+            if not ip_addresses:
+                raise HTTPException(status_code=400, detail="Device has no IP addresses")
+
+            device_ip = ip_addresses[0]
+
+            # Get services
+            pia_service = get_pia_service()
+            routing_service = get_routing_service()
+
+            # Ensure connection to new region
+            success = await pia_service.ensure_region_connection(
+                region_id=region_select.region_id,
+                region_data=region,
+                username=pia_credentials["username"],
+                password=pia_credentials["password"]
+            )
+
+            if not success:
+                raise Exception(f"Failed to connect to region {region['name']}")
+
+            # Update routing to use new interface
+            pia_interface = pia_service._get_interface_name(region_select.region_id)
+            await routing_service.enable_device_routing(device_ip, pia_interface)
+
+            logger.info(f"Updated routing for {device['hostname']} to use region {region['name']}")
+
+        # Log event
+        await ConnectionLogDB.add(
+            "device_region",
+            "success",
+            region_id=region_select.region_id,
+            message=f"Region set to {region['name']} for device {device['hostname']}"
+        )
+
+        return SuccessResponse(
+            message=f"Region set to {region['name']} for device {device['hostname']}"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to set device region: {e}")
+        await ConnectionLogDB.add(
+            "device_region",
+            "error",
+            message=f"Failed to set device region: {str(e)}"
         )
         raise HTTPException(status_code=500, detail=str(e))
 
