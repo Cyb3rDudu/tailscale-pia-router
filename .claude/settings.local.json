@@ -6,5 +6,10 @@
     "projects",
     "browsermcp",
     "docfork"
-  ]
+  ],
+  "permissions": {
+    "allow": [
+      "Bash(ssh root@10.36.0.102:*)"
+    ]
+  }
 }

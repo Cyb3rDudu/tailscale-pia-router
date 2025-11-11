@@ -34,7 +34,7 @@ class TailscaleService:
         self.client = httpx.AsyncClient(
             base_url=TAILSCALE_API_BASE,
             headers={"Authorization": f"Bearer {api_key}"},
-            timeout=30.0,
+            timeout=5.0,  # Reduced from 30s for faster fallback to CLI
             verify=False
         )
         logger.info("Tailscale API key configured")
@@ -132,12 +132,30 @@ class TailscaleService:
             data = response.json()
             devices = data.get("devices", [])
 
-            # Parse devices
+            # Get self hostname to filter out this container
+            local_status = await self.get_local_status()
+            self_hostname = local_status.get("hostname", "")
+
+            # Parse and filter devices
             parsed_devices = []
             for device in devices:
+                hostname = device.get("hostname", "")
+
+                # Skip this container
+                if hostname == self_hostname:
+                    logger.debug(f"Skipping self: {hostname}")
+                    continue
+
+                # Skip devices that are exit nodes
+                # In API, check if device is advertising routes (exit nodes)
+                advertises_routes = device.get("advertisesExitNode", False)
+                if advertises_routes:
+                    logger.debug(f"Skipping exit node: {hostname}")
+                    continue
+
                 parsed_devices.append({
                     "id": device.get("id"),
-                    "hostname": device.get("hostname"),
+                    "hostname": hostname,
                     "name": device.get("name"),
                     "ip_addresses": device.get("addresses", []),
                     "os": device.get("os"),
@@ -145,7 +163,7 @@ class TailscaleService:
                     "online": not device.get("expires")  # If no expiry, it's online
                 })
 
-            logger.info(f"Fetched {len(parsed_devices)} devices from Tailscale API")
+            logger.info(f"Fetched {len(parsed_devices)} routable devices from Tailscale API (filtered out exit nodes and self)")
             return parsed_devices
 
         except httpx.HTTPError as e:
@@ -168,9 +186,21 @@ class TailscaleService:
 
             data = json.loads(result.stdout)
             peers = data.get("Peer", {})
+            self_info = data.get("Self", {})
+            self_hostname = self_info.get("HostName", "")
 
             devices = []
             for peer_id, peer in peers.items():
+                # Skip exit nodes (devices advertising as exit nodes)
+                if peer.get("ExitNode", False) or peer.get("ExitNodeOption", False):
+                    logger.debug(f"Skipping exit node: {peer.get('HostName')}")
+                    continue
+
+                # Skip self (this container)
+                if peer.get("HostName") == self_hostname:
+                    logger.debug(f"Skipping self: {peer.get('HostName')}")
+                    continue
+
                 devices.append({
                     "id": peer_id,
                     "hostname": peer.get("HostName"),
@@ -181,20 +211,7 @@ class TailscaleService:
                     "online": peer.get("Online", False)
                 })
 
-            # Add self
-            self_info = data.get("Self", {})
-            if self_info:
-                devices.append({
-                    "id": self_info.get("ID"),
-                    "hostname": self_info.get("HostName"),
-                    "name": self_info.get("DNSName", "").split(".")[0],
-                    "ip_addresses": self_info.get("TailscaleIPs", []),
-                    "os": self_info.get("OS"),
-                    "last_seen": None,
-                    "online": True
-                })
-
-            logger.info(f"Fetched {len(devices)} devices from Tailscale CLI")
+            logger.info(f"Fetched {len(devices)} routable devices from Tailscale CLI (filtered out exit nodes and self)")
             return devices
 
         except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
