@@ -77,31 +77,6 @@
                 </div>
             </div>
 
-            <!-- Region Selection & Connection Control -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">VPN Control</h2>
-                <div class="flex flex-col sm:flex-row gap-4">
-                    <div class="flex-1">
-                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Select Region</label>
-                        <select x-model="selectedRegion" @change="selectRegion()" class="w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
-                            <option value="">-- Select a region --</option>
-                            <template x-for="region in regions" :key="region.id">
-                                <option :value="region.id" x-text="`${region.name} (${region.country})`"></option>
-                            </template>
-                        </select>
-                    </div>
-                    <div class="flex items-end">
-                        <button
-                            @click="toggleConnection()"
-                            :disabled="loading || !selectedRegion"
-                            :class="piaStatus.connected ? 'bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800' : 'bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800'"
-                            class="px-6 py-2 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
-                            x-text="loading ? 'Please wait...' : (piaStatus.connected ? 'Disconnect' : 'Connect')">
-                        </button>
-                    </div>
-                </div>
-            </div>
-
             <!-- Device List -->
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Tailscale Devices</h2>
@@ -118,35 +93,35 @@
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Route via PIA</th>
                             </tr>
                         </thead>
-                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                            <template x-for="device in devices" :key="device.id">
-                                <template>
-                                    <!-- Main device row -->
-                                    <tr class="hover:bg-gray-50 dark:hover:bg-gray-750">
-                                        <td class="px-2 py-4 whitespace-nowrap">
-                                            <button @click="toggleDeviceExpanded(device.id)" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                                                <svg x-show="!expandedDevices.includes(device.id)" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                                                </svg>
-                                                <svg x-show="expandedDevices.includes(device.id)" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                                </svg>
-                                            </button>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="text-sm font-medium text-gray-900 dark:text-white" x-text="device.hostname"></div>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="text-sm text-gray-600 dark:text-gray-400" x-text="device.ip_addresses.join(', ')"></div>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <div class="text-sm text-gray-600 dark:text-gray-400" x-text="device.os || 'Unknown'"></div>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <span :class="device.online ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'" class="px-2 py-1 text-xs rounded-full" x-text="device.online ? 'Online' : 'Offline'"></span>
-                                        </td>
-                                        <td class="px-6 py-4">
-                                            <!-- Region selector for all devices -->
+                        <template x-for="device in devices" :key="device.id">
+                            <tbody class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                                <!-- Main device row -->
+                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <td class="px-2 py-4 whitespace-nowrap">
+                                        <button @click="toggleDeviceExpanded(device.id)" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                                            <svg x-show="!expandedDevices.includes(device.id)" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                            </svg>
+                                            <svg x-show="expandedDevices.includes(device.id)" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        </button>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-sm font-medium text-gray-900 dark:text-white" x-text="device.hostname"></div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-sm text-gray-600 dark:text-gray-400" x-text="device.ip_addresses.join(', ')"></div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-sm text-gray-600 dark:text-gray-400" x-text="device.os || 'Unknown'"></div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span :class="device.online ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'" class="px-2 py-1 text-xs rounded-full" x-text="device.online ? 'Online' : 'Offline'"></span>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <!-- Region selector only for headless devices -->
+                                        <template x-if="!device.auto_managed">
                                             <select
                                                 @change="setDeviceRegion(device.id, $event.target.value)"
                                                 class="text-sm rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
@@ -155,9 +130,15 @@
                                                     <option :value="region.id" :selected="device.region_id === region.id" x-text="`${region.name} (${region.country})`"></option>
                                                 </template>
                                             </select>
-                                        </td>
-                                        <td class="px-6 py-4 whitespace-nowrap">
-                                            <!-- Manual toggle for all devices -->
+                                        </template>
+                                        <!-- Show "Auto" for GUI devices -->
+                                        <template x-if="device.auto_managed">
+                                            <span class="text-sm text-gray-500 dark:text-gray-400 italic">Auto (any VPN)</span>
+                                        </template>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <!-- Manual toggle only for headless devices -->
+                                        <template x-if="!device.auto_managed">
                                             <label class="relative inline-flex items-center cursor-pointer">
                                                 <input
                                                     type="checkbox"
@@ -166,34 +147,38 @@
                                                     class="sr-only peer">
                                                 <div class="w-11 h-6 bg-gray-200 dark:bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 dark:after:border-gray-600 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600 dark:peer-checked:bg-blue-500"></div>
                                             </label>
-                                        </td>
-                                    </tr>
-                                    <!-- Expandable detail row -->
-                                    <tr x-show="expandedDevices.includes(device.id)" class="bg-gray-50 dark:bg-gray-750">
-                                        <td colspan="7" class="px-8 py-4">
-                                            <div class="grid grid-cols-2 gap-4 text-sm">
-                                                <div>
-                                                    <span class="font-medium text-gray-700 dark:text-gray-300">VPN Interface:</span>
-                                                    <span class="ml-2 text-gray-600 dark:text-gray-400" x-text="device.routing_enabled && device.region_id ? `pia-${device.region_id}` : 'Not connected'"></span>
-                                                </div>
-                                                <div>
-                                                    <span class="font-medium text-gray-700 dark:text-gray-300">VPN Status:</span>
-                                                    <span class="ml-2" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'" x-text="device.routing_enabled ? 'Connected' : 'Disconnected'"></span>
-                                                </div>
-                                                <div>
-                                                    <span class="font-medium text-gray-700 dark:text-gray-300">Public IP:</span>
-                                                    <span class="ml-2 text-gray-600 dark:text-gray-400">Loading...</span>
-                                                </div>
-                                                <div>
-                                                    <span class="font-medium text-gray-700 dark:text-gray-300">Last Handshake:</span>
-                                                    <span class="ml-2 text-gray-600 dark:text-gray-400">N/A</span>
-                                                </div>
+                                        </template>
+                                        <!-- Show auto status for GUI devices -->
+                                        <template x-if="device.auto_managed">
+                                            <span :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'" class="text-sm" x-text="device.routing_enabled ? 'Auto (On)' : 'Auto (Off)'"></span>
+                                        </template>
+                                    </td>
+                                </tr>
+                                <!-- Expandable detail row -->
+                                <tr x-show="expandedDevices.includes(device.id)" class="bg-gray-50 dark:bg-gray-700">
+                                    <td colspan="7" class="px-8 py-4">
+                                        <div class="grid grid-cols-2 gap-4 text-sm">
+                                            <div>
+                                                <span class="font-medium text-gray-700 dark:text-gray-300">VPN Interface:</span>
+                                                <span class="ml-2 text-gray-600 dark:text-gray-400" x-text="device.routing_enabled && device.region_id ? `pia-${device.region_id}` : 'Not connected'"></span>
                                             </div>
-                                        </td>
-                                    </tr>
-                                </template>
-                            </template>
-                        </tbody>
+                                            <div>
+                                                <span class="font-medium text-gray-700 dark:text-gray-300">VPN Status:</span>
+                                                <span class="ml-2" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'" x-text="device.routing_enabled ? 'Connected' : 'Disconnected'"></span>
+                                            </div>
+                                            <div>
+                                                <span class="font-medium text-gray-700 dark:text-gray-300">Public IP:</span>
+                                                <span class="ml-2 text-gray-600 dark:text-gray-400">Loading...</span>
+                                            </div>
+                                            <div>
+                                                <span class="font-medium text-gray-700 dark:text-gray-300">Last Handshake:</span>
+                                                <span class="ml-2 text-gray-600 dark:text-gray-400">N/A</span>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </template>
                     </table>
                     <div x-show="devices.length === 0" class="text-center py-4 text-gray-500 dark:text-gray-400">
                         No devices found
@@ -219,7 +204,6 @@
 
                 async init() {
                     await this.loadRegions();
-                    await this.loadCurrentRegion();
                     await this.refreshStatus();
 
                     // Poll status every 5 seconds
@@ -233,18 +217,6 @@
                         this.regions = data.regions;
                     } catch (error) {
                         console.error('Failed to load regions:', error);
-                    }
-                },
-
-                async loadCurrentRegion() {
-                    try {
-                        const response = await fetch('/api/status/pia');
-                        const data = await response.json();
-                        if (data.region_id) {
-                            this.selectedRegion = data.region_id;
-                        }
-                    } catch (error) {
-                        console.error('Failed to load current region:', error);
                     }
                 },
 
@@ -306,50 +278,6 @@
                         this.devices = data.devices;
                     } catch (error) {
                         console.error('Failed to load devices:', error);
-                    }
-                },
-
-                async selectRegion() {
-                    if (!this.selectedRegion) return;
-
-                    this.loading = true;
-                    try {
-                        const response = await fetch('/api/settings/region/select', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ region_id: this.selectedRegion })
-                        });
-
-                        if (!response.ok) {
-                            const error = await response.json();
-                            alert('Failed to select region: ' + error.detail);
-                        } else {
-                            await this.refreshStatus();
-                        }
-                    } catch (error) {
-                        alert('Failed to select region: ' + error.message);
-                    } finally {
-                        this.loading = false;
-                    }
-                },
-
-                async toggleConnection() {
-                    this.loading = true;
-                    try {
-                        const response = await fetch('/api/settings/connection/toggle', {
-                            method: 'POST'
-                        });
-
-                        if (!response.ok) {
-                            const error = await response.json();
-                            alert('Failed to toggle connection: ' + error.detail);
-                        } else {
-                            await this.refreshStatus();
-                        }
-                    } catch (error) {
-                        alert('Failed to toggle connection: ' + error.message);
-                    } finally {
-                        this.loading = false;
                     }
                 },
 

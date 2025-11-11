@@ -59,6 +59,11 @@ async def get_devices() -> TailscaleDeviceList:
         # Get routing status for each device
         device_list = []
         for device in devices:
+            device_os = device.get("os", "").lower()
+
+            # Determine if device should be auto-managed (macOS/iOS)
+            is_auto_managed = device_os in ["macos", "ios"]
+
             # Get current routing status and region
             routing_enabled = await DeviceRoutingDB.is_enabled(device["id"])
             region_id = await DeviceRoutingDB.get_region(device["id"])
@@ -70,6 +75,27 @@ async def get_devices() -> TailscaleDeviceList:
                 if region:
                     region_name = region["name"]
 
+            # Auto-enable/disable routing for GUI clients based on ANY VPN connection
+            if is_auto_managed:
+                if pia_connected and not routing_enabled:
+                    # Any PIA connection active, enable routing
+                    device_ip = device["ip_addresses"][0] if device["ip_addresses"] else None
+                    if device_ip:
+                        # For auto-managed devices, use the first available VPN interface
+                        # They don't need per-device regions, they use whatever is connected
+                        await routing_service.enable_device_routing(device_ip, "pia")
+                        await DeviceRoutingDB.set_enabled(device["id"], True)
+                        routing_enabled = True
+                        logger.info(f"Auto-enabled routing for {device['hostname']} ({device_os})")
+                elif not pia_connected and routing_enabled:
+                    # No PIA connections, disable routing
+                    device_ip = device["ip_addresses"][0] if device["ip_addresses"] else None
+                    if device_ip:
+                        await routing_service.disable_device_routing(device_ip)
+                        await DeviceRoutingDB.set_enabled(device["id"], False)
+                        routing_enabled = False
+                        logger.info(f"Auto-disabled routing for {device['hostname']} ({device_os})")
+
             device_list.append(TailscaleDevice(
                 id=device["id"],
                 hostname=device["hostname"],
@@ -78,7 +104,7 @@ async def get_devices() -> TailscaleDeviceList:
                 last_seen=device.get("last_seen"),
                 online=device["online"],
                 routing_enabled=routing_enabled,
-                auto_managed=False,  # All devices are manually managed
+                auto_managed=is_auto_managed,
                 region_id=region_id,
                 region_name=region_name
             ))
