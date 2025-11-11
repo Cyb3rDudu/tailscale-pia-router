@@ -86,12 +86,13 @@ class PIAService:
             Authentication token
         """
         try:
-            # Use form data (official PIA method)
+            # Use multipart/form-data (curl --form equivalent)
+            # In httpx, files parameter sends multipart/form-data
             response = await self.client.post(
                 PIA_TOKEN_URL,
-                data={
-                    "username": username,
-                    "password": password
+                files={
+                    "username": (None, username),
+                    "password": (None, password)
                 }
             )
             response.raise_for_status()
