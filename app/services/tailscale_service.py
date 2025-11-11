@@ -4,6 +4,7 @@ import asyncio
 import subprocess
 import json
 import httpx
+import certifi
 from typing import Optional, Dict, List
 import logging
 
@@ -32,7 +33,8 @@ class TailscaleService:
         self.client = httpx.AsyncClient(
             base_url=TAILSCALE_API_BASE,
             headers={"Authorization": f"Bearer {api_key}"},
-            timeout=30.0
+            timeout=30.0,
+            verify=certifi.where()
         )
         logger.info("Tailscale API key configured")
 

@@ -5,6 +5,7 @@ import httpx
 import json
 import subprocess
 import base64
+import certifi
 from pathlib import Path
 from typing import Optional, Dict, List
 from datetime import datetime
@@ -22,7 +23,7 @@ class PIAService:
     """Service for managing PIA VPN connection."""
 
     def __init__(self):
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = httpx.AsyncClient(timeout=30.0, verify=certifi.where())
 
     async def close(self):
         """Close the HTTP client."""
