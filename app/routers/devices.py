@@ -16,6 +16,7 @@ from app.models import (
 from app.services import (
     get_tailscale_service,
     get_routing_service,
+    get_tailscale_ssh_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -119,7 +120,71 @@ async def toggle_device_routing(device_id: str, toggle: DeviceRoutingToggle) -> 
         )
 
         logger.info(f"Routing {action} for device {device['hostname']} ({device_ip})")
-        return SuccessResponse(message=f"Routing {action} for device {device['hostname']}")
+
+        # Get exit node status and prepare response
+        tailscale_service = get_tailscale_service()
+        exit_node_status = await tailscale_service.get_exit_node_status()
+        container_ip = exit_node_status.get("tailscale_ip")
+
+        response_message = f"Routing {action} for device {device['hostname']}"
+
+        # If enabling routing, attempt SSH automation or provide manual command
+        if toggle.enabled and container_ip:
+            device_os = device.get("os", "").lower()
+            device_hostname = device.get("hostname")
+
+            # Try SSH automation for Linux devices
+            ssh_result = None
+            if device_os == "linux":
+                ssh_service = get_tailscale_ssh_service()
+                ssh_result = await ssh_service.set_exit_node_via_ssh(
+                    device_target=device_ip,
+                    exit_node_ip=container_ip,
+                    username="root",
+                    device_hostname=device_hostname
+                )
+
+            if ssh_result and ssh_result.get("success"):
+                # SSH automation succeeded
+                response_message = f"Routing enabled and exit node configured automatically for {device['hostname']}"
+                logger.info(f"Successfully configured exit node via SSH for {device_hostname}")
+            else:
+                # SSH failed or not attempted - provide manual command
+                manual_command = f"tailscale set --exit-node={container_ip}"
+
+                if device_os == "ios":
+                    response_message += f". Open Tailscale app → Exit Node → Select 'pia'"
+                elif ssh_result:
+                    # SSH was attempted but failed
+                    error_msg = ssh_result.get("error", "Unknown error")
+                    response_message += f". SSH failed ({error_msg}). Run manually on {device_hostname}: {manual_command}"
+                    logger.warning(f"SSH automation failed for {device_hostname}: {error_msg}")
+                else:
+                    # SSH not attempted (non-Linux)
+                    response_message += f". Run this command on {device_hostname}: {manual_command}"
+
+        elif toggle.enabled:
+            response_message += ". Warning: Container is not advertising as exit node"
+
+        # If disabling, attempt SSH to clear exit node
+        elif not toggle.enabled and container_ip:
+            device_os = device.get("os", "").lower()
+            device_hostname = device.get("hostname")
+
+            if device_os == "linux":
+                ssh_service = get_tailscale_ssh_service()
+                ssh_result = await ssh_service.disable_exit_node_via_ssh(
+                    device_target=device_ip,
+                    username="root",
+                    device_hostname=device_hostname
+                )
+
+                if ssh_result and ssh_result.get("success"):
+                    response_message = f"Routing disabled and exit node cleared for {device['hostname']}"
+                else:
+                    response_message += f". Run this on {device_hostname} to clear exit node: tailscale set --exit-node="
+
+        return SuccessResponse(message=response_message)
 
     except HTTPException:
         raise
