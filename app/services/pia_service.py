@@ -51,6 +51,14 @@ class PIAService:
 
             parsed_regions = []
             for region in regions:
+                # Only include regions that have WireGuard servers
+                servers = region.get("servers", {})
+                wg_servers = servers.get("wg", [])
+
+                if not wg_servers:
+                    logger.debug(f"Skipping region {region.get('id')} - no WireGuard servers")
+                    continue
+
                 parsed_regions.append({
                     "id": region.get("id"),
                     "name": region.get("name"),
@@ -58,10 +66,10 @@ class PIAService:
                     "dns": region.get("dns"),
                     "port_forward": region.get("port_forward", False),
                     "geo": region.get("geo", False),
-                    "servers": json.dumps(region.get("servers", {}))
+                    "servers": json.dumps(servers)
                 })
 
-            logger.info(f"Fetched {len(parsed_regions)} PIA regions")
+            logger.info(f"Fetched {len(parsed_regions)} PIA regions with WireGuard support")
             return parsed_regions
 
         except Exception as e:
@@ -168,16 +176,56 @@ class PIAService:
             if not server_ip:
                 raise ValueError(f"No server IP found for region {region_id}")
 
-            # Get server public key from server data or meta
-            server_public_key = server.get("pk")
+            # Fetch server public key from meta server
+            meta_servers = servers.get("meta", [])
+            if not meta_servers:
+                raise ValueError(f"No meta servers found for region {region_id}")
+
+            # Try fetching public key from meta servers (try all if first fails)
+            server_public_key = None
+            for meta_server in meta_servers:
+                meta_ip = meta_server.get("ip")
+                if not meta_ip:
+                    continue
+
+                try:
+                    logger.debug(f"Fetching public key from meta server {meta_ip}")
+                    meta_response = await self.client.get(
+                        f"https://{meta_ip}:443/",
+                        timeout=10.0,
+                        follow_redirects=True
+                    )
+                    meta_response.raise_for_status()
+                    meta_data = meta_response.json()
+
+                    # Try different key names that PIA might use
+                    server_public_key = (
+                        meta_data.get("server_key") or
+                        meta_data.get("pubkey") or
+                        meta_data.get("public_key") or
+                        meta_data.get("wg_pubkey")
+                    )
+
+                    if server_public_key:
+                        logger.info(f"Successfully fetched public key from {meta_ip}")
+                        break
+                    else:
+                        logger.warning(f"Meta server {meta_ip} returned no public key: {meta_data}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to fetch from meta server {meta_ip}: {e}")
+                    continue
+
+            # Fallback: Try to get public key from server data
             if not server_public_key:
-                # Try getting from meta
-                meta = servers.get("meta", [])
-                if meta:
-                    server_public_key = meta[0].get("pubkey")
+                logger.warning(f"Could not fetch from meta servers, trying fallback")
+                server_public_key = server.get("pk") or server.get("pubkey")
 
             if not server_public_key:
-                raise ValueError(f"No server public key found for region {region_id}")
+                raise ValueError(
+                    f"No server public key found for region {region_id}. "
+                    f"Tried {len(meta_servers)} meta servers and server data fallback."
+                )
 
             endpoint = f"{server_ip}:1337"
 

@@ -1,0 +1,160 @@
+{
+  "name": "Proxmox Container APT Update",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "container_ids",
+              "name": "containerIds",
+              "value": "={{ [100, 101, 102, 103, 104] }}",
+              "type": "array"
+            },
+            {
+              "id": "proxmox_host",
+              "name": "proxmoxHost",
+              "value": "10.36.0.2",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2c3d4e5-f678-90ab-cdef-1234567890ab",
+      "name": "Set Container List",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "containerIds",
+        "options": {}
+      },
+      "id": "c3d4e5f6-7890-abcd-ef12-34567890abcd",
+      "name": "Split Container IDs",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "command": "=ssh root@{{ $('Set Container List').item.json.proxmoxHost }} 'pct exec {{ $json.containerIds }} -- bash -c \"apt update && apt upgrade -y\"'",
+        "options": {}
+      },
+      "id": "d4e5f678-90ab-cdef-1234-567890abcdef",
+      "name": "APT Update & Upgrade",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "container_id",
+              "name": "containerId",
+              "value": "={{ $json.containerIds }}",
+              "type": "number"
+            },
+            {
+              "id": "output",
+              "name": "output",
+              "value": "={{ $json.stdout }}",
+              "type": "string"
+            },
+            {
+              "id": "error",
+              "name": "error",
+              "value": "={{ $json.stderr }}",
+              "type": "string"
+            },
+            {
+              "id": "exit_code",
+              "name": "exitCode",
+              "value": "={{ $json.exitCode }}",
+              "type": "number"
+            },
+            {
+              "id": "timestamp",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e5f67890-abcd-ef12-3456-7890abcdef12",
+      "name": "Format Results",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [
+          {
+            "node": "Set Container List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Container List": {
+      "main": [
+        [
+          {
+            "node": "Split Container IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Container IDs": {
+      "main": [
+        [
+          {
+            "node": "APT Update & Upgrade",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "APT Update & Upgrade": {
+      "main": [
+        [
+          {
+            "node": "Format Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-11T08:00:00.000Z",
+  "versionId": "1"
+}
