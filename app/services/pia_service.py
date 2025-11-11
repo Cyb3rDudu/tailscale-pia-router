@@ -40,8 +40,13 @@ class PIAService:
             response = await self.client.get(PIA_SERVER_LIST_URL)
             response.raise_for_status()
 
-            # Parse the response - it's a JSON with base64 encoded data
-            data = response.json()
+            # PIA response format: JSON on first line, then signature
+            # Split on first newline and only parse the JSON part
+            response_text = response.text
+            json_part = response_text.split('\n')[0]
+
+            # Parse the JSON
+            data = json.loads(json_part)
             regions = data.get("regions", [])
 
             parsed_regions = []
