@@ -302,7 +302,8 @@ class TailscaleService:
             return {
                 "advertised": self_info.get("AdvertiseExitNode", False),
                 "routes": self_info.get("AllowedIPs", []),
-                "online": self_info.get("Online", False)
+                "online": self_info.get("Online", False),
+                "tailscale_ip": self_info.get("TailscaleIPs", [None])[0]
             }
 
         except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
@@ -310,8 +311,27 @@ class TailscaleService:
             return {
                 "advertised": False,
                 "routes": [],
-                "online": False
+                "online": False,
+                "tailscale_ip": None
             }
+
+    async def get_container_exit_node_command(self) -> Optional[str]:
+        """Get the command to configure this container as exit node.
+
+        Returns:
+            Command string to run on client devices, or None if not ready
+        """
+        try:
+            status = await self.get_exit_node_status()
+            if not status.get("advertised") or not status.get("tailscale_ip"):
+                return None
+
+            container_ip = status["tailscale_ip"]
+            return f"tailscale set --exit-node={container_ip}"
+
+        except Exception as e:
+            logger.error(f"Failed to get exit node command: {e}")
+            return None
 
 
 # Global service instance
