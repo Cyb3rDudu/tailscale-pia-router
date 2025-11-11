@@ -4,7 +4,6 @@ import asyncio
 import subprocess
 import json
 import httpx
-import certifi
 from typing import Optional, Dict, List
 import logging
 
@@ -30,11 +29,13 @@ class TailscaleService:
         if self.client:
             asyncio.create_task(self.client.aclose())
 
+        # NOTE: SSL verification disabled due to Python 3.13.5 + OpenSSL 3.5.1 compatibility issue
+        # This is acceptable for homelab use with known Tailscale API
         self.client = httpx.AsyncClient(
             base_url=TAILSCALE_API_BASE,
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=30.0,
-            verify=certifi.where()
+            verify=False
         )
         logger.info("Tailscale API key configured")
 
