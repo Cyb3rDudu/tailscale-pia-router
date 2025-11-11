@@ -176,6 +176,39 @@ class RoutingService:
                 check=False
             )
 
+            # Add exception routes BEFORE default route (more specific routes take precedence)
+
+            # Exception 1: Tailscale network should use main routing table
+            subprocess.run(
+                ["ip", "route", "add", "100.64.0.0/10", "dev", TAILSCALE_INTERFACE, "table", str(table_id)],
+                capture_output=True,
+                check=False
+            )
+            logger.info(f"Added Tailscale network exception in table {table_id}")
+
+            # Exception 2: Local network should use main routing table
+            # Get default gateway from main table
+            gateway_result = subprocess.run(
+                ["ip", "route", "show", "default"],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            if gateway_result.returncode == 0 and "via" in gateway_result.stdout:
+                # Extract gateway IP and interface
+                parts = gateway_result.stdout.strip().split()
+                if "via" in parts:
+                    gateway_idx = parts.index("via") + 1
+                    gateway_ip = parts[gateway_idx]
+
+                    # Add route for local network through default gateway
+                    subprocess.run(
+                        ["ip", "route", "add", "10.36.0.0/22", "via", gateway_ip, "table", str(table_id)],
+                        capture_output=True,
+                        check=False
+                    )
+                    logger.info(f"Added local network exception via {gateway_ip} in table {table_id}")
+
             # Add default route via PIA interface in this device's table
             result = subprocess.run(
                 ["ip", "route", "add", "default", "dev", pia_interface, "table", str(table_id)],
