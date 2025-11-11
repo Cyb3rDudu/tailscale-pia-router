@@ -37,9 +37,10 @@ class PIAService:
             region_id: PIA region ID
 
         Returns:
-            Interface name (e.g., pia-de, pia-sg)
+            Interface name (e.g., pia-de, pia-sg, pia-kr-south-korea-pf)
         """
-        return f"{WG_INTERFACE_PREFIX}{region_id.lower()}"
+        # Replace underscores with dashes for valid Linux interface names
+        return f"{WG_INTERFACE_PREFIX}{region_id.lower().replace('_', '-')}"
 
     async def fetch_server_list(self) -> List[Dict]:
         """Fetch PIA server list from API.
