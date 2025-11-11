@@ -127,14 +127,24 @@
                                         <span :class="device.online ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'" class="px-2 py-1 text-xs rounded-full" x-text="device.online ? 'Online' : 'Offline'"></span>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
-                                        <label class="relative inline-flex items-center cursor-pointer">
-                                            <input
-                                                type="checkbox"
-                                                :checked="device.routing_enabled"
-                                                @change="toggleDeviceRouting(device.id, $event.target.checked)"
-                                                class="sr-only peer">
-                                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                        </label>
+                                        <!-- Auto-managed devices (macOS/iOS) -->
+                                        <template x-if="device.auto_managed">
+                                            <div class="flex items-center space-x-2">
+                                                <span :class="device.routing_enabled ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'" class="px-2 py-1 text-xs rounded-full font-medium" x-text="device.routing_enabled ? 'Auto: Enabled' : 'Auto: Disabled'"></span>
+                                                <span class="text-xs text-gray-500">(via PIA status)</span>
+                                            </div>
+                                        </template>
+                                        <!-- Manual toggle for Linux servers -->
+                                        <template x-if="!device.auto_managed">
+                                            <label class="relative inline-flex items-center cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    :checked="device.routing_enabled"
+                                                    @change="toggleDeviceRouting(device.id, $event.target.checked)"
+                                                    class="sr-only peer">
+                                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                            </label>
+                                        </template>
                                     </td>
                                 </tr>
                             </template>

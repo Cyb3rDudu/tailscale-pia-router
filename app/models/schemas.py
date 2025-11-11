@@ -48,6 +48,7 @@ class TailscaleDevice(BaseModel):
     last_seen: Optional[datetime] = None
     online: bool = False
     routing_enabled: bool = False
+    auto_managed: bool = False  # True for macOS/iOS with automatic routing
 
 
 class TailscaleDeviceList(BaseModel):

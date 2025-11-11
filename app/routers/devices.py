@@ -17,6 +17,7 @@ from app.services import (
     get_tailscale_service,
     get_routing_service,
     get_tailscale_ssh_service,
+    get_pia_service,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,8 +33,14 @@ async def get_devices() -> TailscaleDeviceList:
         List of Tailscale devices with routing status
     """
     try:
+        # Check PIA connection status
+        pia_service = get_pia_service()
+        pia_status = await pia_service.get_status()
+        pia_connected = pia_status.get("connected", False)
+
         # Fetch devices from Tailscale
         tailscale_service = get_tailscale_service()
+        routing_service = get_routing_service()
         devices = await tailscale_service.get_devices()
 
         # Update database
@@ -50,7 +57,32 @@ async def get_devices() -> TailscaleDeviceList:
         # Get routing status for each device
         device_list = []
         for device in devices:
+            device_os = device.get("os", "").lower()
+
+            # Determine if device should be auto-managed (macOS/iOS)
+            is_auto_managed = device_os in ["macos", "ios"]
+
+            # Get current routing status
             routing_enabled = await DeviceRoutingDB.is_enabled(device["id"])
+
+            # Auto-enable/disable routing for GUI clients based on PIA status
+            if is_auto_managed:
+                if pia_connected and not routing_enabled:
+                    # PIA connected, enable routing
+                    device_ip = device["ip_addresses"][0] if device["ip_addresses"] else None
+                    if device_ip:
+                        await routing_service.enable_device_routing(device_ip)
+                        await DeviceRoutingDB.set_enabled(device["id"], True)
+                        routing_enabled = True
+                        logger.info(f"Auto-enabled routing for {device['hostname']} ({device_os})")
+                elif not pia_connected and routing_enabled:
+                    # PIA disconnected, disable routing
+                    device_ip = device["ip_addresses"][0] if device["ip_addresses"] else None
+                    if device_ip:
+                        await routing_service.disable_device_routing(device_ip)
+                        await DeviceRoutingDB.set_enabled(device["id"], False)
+                        routing_enabled = False
+                        logger.info(f"Auto-disabled routing for {device['hostname']} ({device_os})")
 
             device_list.append(TailscaleDevice(
                 id=device["id"],
@@ -59,7 +91,8 @@ async def get_devices() -> TailscaleDeviceList:
                 os=device.get("os"),
                 last_seen=device.get("last_seen"),
                 online=device["online"],
-                routing_enabled=routing_enabled
+                routing_enabled=routing_enabled,
+                auto_managed=is_auto_managed
             ))
 
         return TailscaleDeviceList(devices=device_list)
@@ -85,6 +118,14 @@ async def toggle_device_routing(device_id: str, toggle: DeviceRoutingToggle) -> 
         device = await TailscaleDevicesDB.get_by_id(device_id)
         if not device:
             raise HTTPException(status_code=404, detail="Device not found")
+
+        # Check if device is auto-managed (macOS/iOS)
+        device_os = device.get("os", "").lower()
+        if device_os in ["macos", "ios"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot manually toggle routing for {device_os} devices. Routing is automatically managed based on PIA connection status."
+            )
 
         # Parse IP addresses
         ip_addresses = json.loads(device["ip_addresses"])
