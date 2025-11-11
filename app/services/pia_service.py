@@ -86,25 +86,34 @@ class PIAService:
             Authentication token
         """
         try:
-            # Use multipart/form-data (curl --form equivalent)
-            # In httpx, files parameter sends multipart/form-data
-            response = await self.client.post(
-                PIA_TOKEN_URL,
-                files={
-                    "username": (None, username),
-                    "password": (None, password)
+            # Create a temporary client with SSL verification enabled for token request
+            # PIA's token endpoint may require proper SSL validation
+            async with httpx.AsyncClient(
+                timeout=30.0,
+                verify=True,  # Enable SSL verification for token endpoint
+                follow_redirects=True,
+                headers={
+                    "User-Agent": "curl/7.81.0"  # Mimic curl user agent
                 }
-            )
-            response.raise_for_status()
+            ) as token_client:
+                # Use multipart/form-data (curl --form equivalent)
+                response = await token_client.post(
+                    PIA_TOKEN_URL,
+                    files={
+                        "username": (None, username),
+                        "password": (None, password)
+                    }
+                )
+                response.raise_for_status()
 
-            data = response.json()
-            token = data.get("token")
+                data = response.json()
+                token = data.get("token")
 
-            if not token:
-                raise ValueError("No token in response")
+                if not token:
+                    raise ValueError("No token in response")
 
-            logger.info("Successfully obtained PIA auth token")
-            return token
+                logger.info("Successfully obtained PIA auth token")
+                return token
 
         except Exception as e:
             logger.error(f"Failed to get PIA auth token: {e}")
