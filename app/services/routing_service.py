@@ -138,7 +138,46 @@ class RoutingService:
             True if successful
         """
         try:
-            # Check if rule already exists
+            # Add policy routing rule to route this device through PIA
+            # Use routing table 100 for PIA-routed devices
+            table_id = 100
+
+            # Check if route already exists in table 100
+            result = subprocess.run(
+                ["ip", "rule", "list"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            rule_exists = f"from {device_ip} lookup {table_id}" in result.stdout
+
+            if not rule_exists:
+                # Add routing rule: traffic from device_ip should use table 100
+                subprocess.run(
+                    ["ip", "rule", "add", "from", device_ip, "table", str(table_id)],
+                    check=True,
+                    capture_output=True
+                )
+                logger.info(f"Added routing rule for {device_ip} to use table {table_id}")
+
+            # Add default route via PIA in table 100
+            result = subprocess.run(
+                ["ip", "route", "show", "table", str(table_id)],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            if "default dev pia" not in result.stdout:
+                subprocess.run(
+                    ["ip", "route", "add", "default", "dev", PIA_INTERFACE, "table", str(table_id)],
+                    check=True,
+                    capture_output=True
+                )
+                logger.info(f"Added default route via PIA in table {table_id}")
+
+            # Add MASQUERADE rule for NAT
             result = subprocess.run(
                 ["iptables", "-t", "nat", "-C", "POSTROUTING", "-s", device_ip, "-o", PIA_INTERFACE, "-j", "MASQUERADE"],
                 capture_output=True,
@@ -146,15 +185,15 @@ class RoutingService:
             )
 
             if result.returncode != 0:
-                # Add rule
                 subprocess.run(
                     ["iptables", "-t", "nat", "-A", "POSTROUTING", "-s", device_ip, "-o", PIA_INTERFACE, "-j", "MASQUERADE"],
                     check=True,
                     capture_output=True
                 )
-                logger.info(f"Enabled routing for device {device_ip}")
+                logger.info(f"Added MASQUERADE rule for {device_ip}")
 
             self.enabled_devices.add(device_ip)
+            logger.info(f"Successfully enabled PIA routing for device {device_ip}")
             return True
 
         except subprocess.CalledProcessError as e:
@@ -165,13 +204,23 @@ class RoutingService:
         """Disable routing for a specific device IP through PIA.
 
         Args:
-            device_ip: Device IP address
+            device_ip: Device_ip address
 
         Returns:
             True if successful
         """
         try:
-            # Remove rule
+            table_id = 100
+
+            # Remove policy routing rule
+            subprocess.run(
+                ["ip", "rule", "del", "from", device_ip, "table", str(table_id)],
+                capture_output=True,
+                check=False
+            )
+            logger.info(f"Removed routing rule for {device_ip}")
+
+            # Remove MASQUERADE rule
             result = subprocess.run(
                 ["iptables", "-t", "nat", "-D", "POSTROUTING", "-s", device_ip, "-o", PIA_INTERFACE, "-j", "MASQUERADE"],
                 capture_output=True,
@@ -179,11 +228,12 @@ class RoutingService:
             )
 
             if result.returncode == 0:
-                logger.info(f"Disabled routing for device {device_ip}")
+                logger.info(f"Removed MASQUERADE rule for {device_ip}")
             else:
-                logger.warning(f"Routing rule for device {device_ip} not found (may already be removed)")
+                logger.warning(f"MASQUERADE rule for {device_ip} not found (may already be removed)")
 
             self.enabled_devices.discard(device_ip)
+            logger.info(f"Successfully disabled PIA routing for device {device_ip}")
             return True
 
         except subprocess.CalledProcessError as e:
