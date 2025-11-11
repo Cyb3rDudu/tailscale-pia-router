@@ -75,26 +75,41 @@ async def get_devices() -> TailscaleDeviceList:
                 if region:
                     region_name = region["name"]
 
-            # Auto-enable/disable routing for GUI clients based on ANY VPN connection
+            # Auto-enable/disable routing for GUI clients based on region selection
             if is_auto_managed:
-                if pia_connected and not routing_enabled:
-                    # Any PIA connection active, enable routing
+                if region_id and not routing_enabled:
+                    # GUI device has region selected, enable routing to that region
                     device_ip = device["ip_addresses"][0] if device["ip_addresses"] else None
                     if device_ip:
-                        # For auto-managed devices, use the first available VPN interface
-                        # They don't need per-device regions, they use whatever is connected
-                        await routing_service.enable_device_routing(device_ip, "pia")
+                        # Get PIA interface for the selected region
+                        pia_service = get_pia_service()
+                        pia_interface = pia_service._get_interface_name(region_id)
+
+                        # Check if region connection is active, if not it will be created
+                        region_data = await PIARegionsDB.get_by_id(region_id)
+                        if region_data:
+                            # Ensure connection exists
+                            pia_credentials = await SettingsDB.get_json("pia_credentials")
+                            if pia_credentials:
+                                await pia_service.ensure_region_connection(
+                                    region_id=region_id,
+                                    region_data=region_data,
+                                    username=pia_credentials["username"],
+                                    password=pia_credentials["password"]
+                                )
+
+                        await routing_service.enable_device_routing(device_ip, pia_interface)
                         await DeviceRoutingDB.set_enabled(device["id"], True)
                         routing_enabled = True
-                        logger.info(f"Auto-enabled routing for {device['hostname']} ({device_os})")
-                elif not pia_connected and routing_enabled:
-                    # No PIA connections, disable routing
+                        logger.info(f"Auto-enabled routing for {device['hostname']} to region {region_id}")
+                elif not region_id and routing_enabled:
+                    # GUI device has no region selected, disable routing
                     device_ip = device["ip_addresses"][0] if device["ip_addresses"] else None
                     if device_ip:
                         await routing_service.disable_device_routing(device_ip)
                         await DeviceRoutingDB.set_enabled(device["id"], False)
                         routing_enabled = False
-                        logger.info(f"Auto-disabled routing for {device['hostname']} ({device_os})")
+                        logger.info(f"Auto-disabled routing for {device['hostname']} (no region selected)")
 
             device_list.append(TailscaleDevice(
                 id=device["id"],
