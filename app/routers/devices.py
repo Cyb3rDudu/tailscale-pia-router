@@ -14,6 +14,7 @@ from app.models import (
     DeviceRoutingDB,
     ConnectionLogDB,
     PIARegionsDB,
+    SettingsDB,
 )
 from app.services import (
     get_tailscale_service,
@@ -175,7 +176,6 @@ async def toggle_device_routing(device_id: str, toggle: DeviceRoutingToggle) -> 
                 raise HTTPException(status_code=404, detail="Selected region not found")
 
             # Get PIA credentials
-            from app.models import SettingsDB
             pia_credentials = await SettingsDB.get_json("pia_credentials")
             if not pia_credentials:
                 raise HTTPException(status_code=400, detail="PIA credentials not configured")
@@ -331,7 +331,6 @@ async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -
 
         if should_enable_routing:
             # Get PIA credentials
-            from app.models import SettingsDB
             pia_credentials = await SettingsDB.get_json("pia_credentials")
             if not pia_credentials:
                 raise HTTPException(status_code=400, detail="PIA credentials not configured")
