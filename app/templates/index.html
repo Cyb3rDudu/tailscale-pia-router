@@ -218,8 +218,8 @@
                     // Initialize network graph
                     this.initNetworkGraph();
 
-                    // Poll status every 5 seconds
-                    this.pollInterval = setInterval(() => this.refreshStatus(), 5000);
+                    // Poll status every 3 seconds for smoother charts
+                    this.pollInterval = setInterval(() => this.refreshStatus(), 3000);
                 },
 
                 async loadRegions() {
@@ -506,19 +506,45 @@
                         const rxBytes = conn.transfer_rx_bytes || 0;
                         const txBytes = conn.transfer_tx_bytes || 0;
 
-                        const rxRate = timeDelta > 0 ? (rxBytes - history.prevRx) / timeDelta : 0;
-                        const txRate = timeDelta > 0 ? (txBytes - history.prevTx) / timeDelta : 0;
+                        // Validate time delta to prevent magnitude errors
+                        let rxRate = 0;
+                        let txRate = 0;
+
+                        if (timeDelta > 0.5 && timeDelta < 10) { // Reasonable time window (0.5s to 10s)
+                            const rxDelta = rxBytes - history.prevRx;
+                            const txDelta = txBytes - history.prevTx;
+
+                            // Calculate instantaneous rate
+                            rxRate = rxDelta / timeDelta;
+                            txRate = txDelta / timeDelta;
+
+                            // Sanity check: if rate exceeds 1 Gbps, something is wrong
+                            const maxRate = 1024 * 1024 * 1024 / 8; // 1 Gbps in bytes/sec
+                            if (rxRate > maxRate) rxRate = 0;
+                            if (txRate > maxRate) txRate = 0;
+
+                            // Apply moving average for smoother visualization
+                            if (!history.smoothedRx) history.smoothedRx = rxRate;
+                            if (!history.smoothedTx) history.smoothedTx = txRate;
+
+                            // Exponential moving average (alpha = 0.3 for smooth but responsive)
+                            history.smoothedRx = 0.3 * rxRate + 0.7 * history.smoothedRx;
+                            history.smoothedTx = 0.3 * txRate + 0.7 * history.smoothedTx;
+
+                            rxRate = history.smoothedRx;
+                            txRate = history.smoothedTx;
+                        }
 
                         history.prevRx = rxBytes;
                         history.prevTx = txBytes;
                         history.prevTime = now;
 
-                        // Add to history (keep last 24 data points = 2 minutes at 5s polling)
+                        // Add to history (keep last 40 data points = 2 minutes at 3s polling)
                         history.timestamps.push(new Date().toLocaleTimeString());
                         history.rx.push(Math.max(0, rxRate)); // Ensure non-negative
                         history.tx.push(Math.max(0, txRate));
 
-                        if (history.timestamps.length > 24) {
+                        if (history.timestamps.length > 40) {
                             history.timestamps.shift();
                             history.rx.shift();
                             history.tx.shift();
