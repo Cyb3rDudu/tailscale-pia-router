@@ -218,8 +218,8 @@
                     // Initialize network graph
                     this.initNetworkGraph();
 
-                    // Poll status every 3 seconds for smoother charts
-                    this.pollInterval = setInterval(() => this.refreshStatus(), 3000);
+                    // Poll status every second for real-time charts
+                    this.pollInterval = setInterval(() => this.refreshStatus(), 1000);
                 },
 
                 async loadRegions() {
@@ -548,13 +548,13 @@
                         const smoothedRx = recentRx.reduce((a, b) => a + b, 0) / windowSize;
                         const smoothedTx = recentTx.reduce((a, b) => a + b, 0) / windowSize;
 
-                        // Add to history (keep last 40 data points = 2 minutes at 3s polling)
+                        // Add to history (keep last 120 data points = 2 minutes at 1s polling)
                         history.timestamps.push(new Date().toLocaleTimeString());
                         history.rx.push(smoothedRx);
                         history.tx.push(smoothedTx);
 
 
-                        if (history.timestamps.length > 40) {
+                        if (history.timestamps.length > 120) {
                             history.timestamps.shift();
                             history.rx.shift();
                             history.tx.shift();
