@@ -513,11 +513,11 @@
                             this.charts[conn.interface] = new Chart(ctx, {
                                 type: 'line',
                                 data: {
-                                    labels: history.timestamps,
+                                    labels: [...history.timestamps],
                                     datasets: [
                                         {
                                             label: 'Download',
-                                            data: history.rx,
+                                            data: [...history.rx],
                                             borderColor: 'rgb(34, 197, 94)',
                                             backgroundColor: 'rgba(34, 197, 94, 0.1)',
                                             tension: 0.4,
@@ -526,7 +526,7 @@
                                         },
                                         {
                                             label: 'Upload',
-                                            data: history.tx,
+                                            data: [...history.tx],
                                             borderColor: 'rgb(59, 130, 246)',
                                             backgroundColor: 'rgba(59, 130, 246, 0.1)',
                                             tension: 0.4,
@@ -584,9 +584,9 @@
                         } else {
                             // Update existing chart
                             const chart = this.charts[conn.interface];
-                            chart.data.labels = history.timestamps;
-                            chart.data.datasets[0].data = history.rx;
-                            chart.data.datasets[1].data = history.tx;
+                            chart.data.labels = [...history.timestamps];
+                            chart.data.datasets[0].data = [...history.rx];
+                            chart.data.datasets[1].data = [...history.tx];
                             chart.update('none');
                         }
                     });
