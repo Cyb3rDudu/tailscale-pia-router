@@ -7,7 +7,8 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
     <script>
         tailwind.config = {
             darkMode: 'media'
@@ -111,9 +112,7 @@
                             <!-- Throughput Chart -->
                             <div class="mt-4">
                                 <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">Throughput (last 2 minutes)</div>
-                                <div style="height: 150px; position: relative;">
-                                    <canvas :id="'chart-' + conn.interface" style="position: absolute; width: 100%; height: 100%;"></canvas>
-                                </div>
+                                <div :id="'chart-' + conn.interface" style="height: 150px;"></div>
                             </div>
 
                             <!-- Devices using this connection -->
@@ -352,100 +351,82 @@
                     const linkGroup = svg.append('g').attr('class', 'links');
                     const nodeGroup = svg.append('g').attr('class', 'nodes');
 
-                    this.networkGraph = { svg, linkGroup, nodeGroup, width, height };
+                    // Create force simulation
+                    const simulation = d3.forceSimulation()
+                        .force('link', d3.forceLink().id(d => d.id).distance(d => d.type === 'mesh' ? 100 : 150))
+                        .force('charge', d3.forceManyBody().strength(-300))
+                        .force('center', d3.forceCenter(width / 2, height / 2))
+                        .force('collision', d3.forceCollide().radius(40));
+
+                    this.networkGraph = { svg, linkGroup, nodeGroup, width, height, simulation };
                 },
 
                 updateNetworkGraph() {
                     if (!this.networkGraph) return;
 
-                    const { svg, linkGroup, nodeGroup, width, height } = this.networkGraph;
+                    const { svg, linkGroup, nodeGroup, width, height, simulation } = this.networkGraph;
 
                     // Build graph data
                     const nodes = [];
                     const links = [];
 
-                    // Add router node (center)
-                    nodes.push({
-                        id: 'router',
-                        label: 'PIA Router',
-                        type: 'router',
-                        x: width / 2,
-                        y: height / 2,
-                        fx: width / 2,
-                        fy: height / 2
+                    // Add all Tailscale device nodes (will form a mesh)
+                    this.devices.forEach(device => {
+                        nodes.push({
+                            id: `device-${device.id}`,
+                            label: device.hostname,
+                            type: 'device',
+                            online: device.online,
+                            region_id: device.region_id
+                        });
                     });
 
-                    // Add PIA exit node nodes (right side)
-                    this.vpnStatus.connections.forEach((conn, idx) => {
-                        const nodeId = `pia-${conn.interface}`;
+                    // Create mesh connections between all devices
+                    for (let i = 0; i < nodes.length; i++) {
+                        for (let j = i + 1; j < nodes.length; j++) {
+                            links.push({
+                                source: nodes[i].id,
+                                target: nodes[j].id,
+                                type: 'mesh'
+                            });
+                        }
+                    }
+
+                    // Add PIA exit nodes
+                    this.vpnStatus.connections.forEach(conn => {
+                        const nodeId = `pia-${conn.region_id}`;
                         nodes.push({
                             id: nodeId,
                             label: conn.region_name,
                             type: 'pia',
-                            x: width * 0.8,
-                            y: height / 2 + (idx - this.vpnStatus.connections.length / 2 + 0.5) * 80
-                        });
-
-                        // Link from router to PIA
-                        links.push({
-                            source: 'router',
-                            target: nodeId
+                            region_id: conn.region_id
                         });
                     });
 
-                    // Add device nodes (left side)
-                    const routedDevices = this.devices.filter(d => d.region_id);
-                    routedDevices.forEach((device, idx) => {
-                        const nodeId = `device-${device.id}`;
-                        nodes.push({
-                            id: nodeId,
-                            label: device.hostname,
-                            type: 'device',
-                            online: device.online,
-                            x: width * 0.2,
-                            y: height / 2 + (idx - routedDevices.length / 2 + 0.5) * 60
-                        });
-
-                        // Link from device to router
-                        links.push({
-                            source: nodeId,
-                            target: 'router'
-                        });
+                    // Add connections from devices to their assigned PIA regions
+                    this.devices.forEach(device => {
+                        if (device.region_id) {
+                            links.push({
+                                source: `device-${device.id}`,
+                                target: `pia-${device.region_id}`,
+                                type: 'exit'
+                            });
+                        }
                     });
 
-                    // Update links with curved paths
-                    const link = linkGroup.selectAll('path')
+                    // Update links
+                    const link = linkGroup.selectAll('line')
                         .data(links, d => `${d.source}-${d.target}`);
 
                     link.exit().remove();
 
-                    link.enter()
-                        .append('path')
-                        .attr('class', 'network-link')
-                        .attr('fill', 'none')
-                        .merge(link)
-                        .attr('d', d => {
-                            const sourceNode = nodes.find(n => n.id === d.source);
-                            const targetNode = nodes.find(n => n.id === d.target);
+                    const linkEnter = link.enter()
+                        .append('line')
+                        .attr('stroke', d => d.type === 'mesh' ? '#4b5563' : '#3b82f6')
+                        .attr('stroke-width', d => d.type === 'mesh' ? 1 : 2)
+                        .attr('stroke-opacity', d => d.type === 'mesh' ? 0.3 : 0.8);
 
-                            if (!sourceNode || !targetNode) return '';
-
-                            const x1 = sourceNode.x;
-                            const y1 = sourceNode.y;
-                            const x2 = targetNode.x;
-                            const y2 = targetNode.y;
-
-                            // Calculate control point for smooth curve
-                            const dx = x2 - x1;
-                            const dy = y2 - y1;
-
-                            // Control point offset (creates the curve)
-                            const cx = x1 + dx * 0.5;
-                            const cy = y1 + dy * 0.5;
-
-                            // Create smooth quadratic bezier curve
-                            return `M ${x1},${y1} Q ${cx},${cy} ${x2},${y2}`;
-                        });
+                    const allLinks = linkEnter.merge(link);
 
                     // Update nodes
                     const node = nodeGroup.selectAll('g')
@@ -455,28 +436,72 @@
 
                     const nodeEnter = node.enter()
                         .append('g')
-                        .attr('class', 'network-node');
+                        .attr('class', 'network-node')
+                        .call(d3.drag()
+                            .on('start', dragstarted)
+                            .on('drag', dragged)
+                            .on('end', dragended));
 
                     nodeEnter.append('circle')
-                        .attr('r', d => d.type === 'router' ? 25 : 20);
+                        .attr('r', d => d.type === 'pia' ? 25 : 20);
 
                     nodeEnter.append('text')
-                        .attr('dy', 30)
+                        .attr('dy', 35)
                         .attr('text-anchor', 'middle')
-                        .attr('class', 'text-gray-900 dark:text-white');
+                        .attr('class', 'text-gray-900 dark:text-white')
+                        .style('font-size', '11px');
 
-                    nodeEnter.merge(node)
-                        .attr('transform', d => `translate(${d.x},${d.y})`)
-                        .select('circle')
+                    const allNodes = nodeEnter.merge(node);
+
+                    allNodes.select('circle')
                         .attr('fill', d => {
-                            if (d.type === 'router') return '#3b82f6';
                             if (d.type === 'pia') return '#22c55e';
-                            return d.online ? '#10b981' : '#6b7280';
-                        });
+                            return d.online ? '#3b82f6' : '#6b7280';
+                        })
+                        .attr('stroke', '#fff')
+                        .attr('stroke-width', 2);
 
-                    nodeEnter.merge(node)
-                        .select('text')
+                    allNodes.select('text')
                         .text(d => d.label);
+
+                    // Update simulation
+                    simulation
+                        .nodes(nodes)
+                        .on('tick', ticked);
+
+                    simulation.force('link')
+                        .links(links);
+
+                    // Restart simulation
+                    simulation.alpha(1).restart();
+
+                    function ticked() {
+                        allLinks
+                            .attr('x1', d => d.source.x)
+                            .attr('y1', d => d.source.y)
+                            .attr('x2', d => d.target.x)
+                            .attr('y2', d => d.target.y);
+
+                        allNodes
+                            .attr('transform', d => `translate(${d.x},${d.y})`);
+                    }
+
+                    function dragstarted(event, d) {
+                        if (!event.active) simulation.alphaTarget(0.3).restart();
+                        d.fx = d.x;
+                        d.fy = d.y;
+                    }
+
+                    function dragged(event, d) {
+                        d.fx = event.x;
+                        d.fy = event.y;
+                    }
+
+                    function dragended(event, d) {
+                        if (!event.active) simulation.alphaTarget(0);
+                        d.fx = null;
+                        d.fy = null;
+                    }
                 },
 
                 updateCharts() {
@@ -488,16 +513,16 @@
                         activeInterfaces.add(conn.interface);
 
                         const chartId = 'chart-' + conn.interface;
-                        const canvas = document.getElementById(chartId);
+                        const chartDiv = document.getElementById(chartId);
 
-                        if (!canvas) return;
+                        if (!chartDiv) return;
 
-                        // Check if existing chart's canvas is still in the DOM
+                        // Check if existing chart is still valid
                         if (globalCharts[conn.interface]) {
-                            const existingCanvas = globalCharts[conn.interface].canvas;
-                            if (!existingCanvas || !existingCanvas.isConnected) {
-                                // Canvas was removed from DOM, destroy the old chart
-                                globalCharts[conn.interface].destroy();
+                            const chart = globalCharts[conn.interface];
+                            if (!chart || !chart.root || !chart.root.isConnected) {
+                                // Chart was removed from DOM, destroy it
+                                if (chart && chart.destroy) chart.destroy();
                                 delete globalCharts[conn.interface];
                             }
                         }
@@ -505,7 +530,7 @@
                         // Initialize transfer history for this connection
                         if (!globalTransferHistory[conn.interface]) {
                             globalTransferHistory[conn.interface] = {
-                                timestamps: [],
+                                timestamps: [],  // Unix timestamps in seconds
                                 rx: [],
                                 tx: [],
                                 rawRx: [],  // Store raw rates for moving average
@@ -583,10 +608,10 @@
                         const smoothedTx = recentTx.reduce((a, b) => a + b, 0) / windowSize;
 
                         // Add to history (keep last 120 data points = 2 minutes at 1s polling)
-                        history.timestamps.push(new Date().toLocaleTimeString());
+                        // uPlot requires Unix timestamps in seconds
+                        history.timestamps.push(Math.floor(now / 1000));
                         history.rx.push(smoothedRx);
                         history.tx.push(smoothedTx);
-
 
                         if (history.timestamps.length > 120) {
                             history.timestamps.shift();
@@ -596,87 +621,77 @@
 
                         // Create or update chart
                         if (!globalCharts[conn.interface]) {
-                            const ctx = canvas.getContext('2d');
-                            globalCharts[conn.interface] = new Chart(ctx, {
-                                type: 'line',
-                                data: {
-                                    labels: [...history.timestamps],
-                                    datasets: [
-                                        {
-                                            label: 'Download',
-                                            data: [...history.rx],
-                                            borderColor: 'rgb(34, 197, 94)',
-                                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                                            tension: 0.4,
-                                            fill: true,
-                                            pointRadius: 0
+                            // uPlot options
+                            const isDark = document.documentElement.classList.contains('dark');
+                            const opts = {
+                                width: chartDiv.clientWidth,
+                                height: 150,
+                                series: [
+                                    {
+                                        label: 'Time'
+                                    },
+                                    {
+                                        label: 'Download',
+                                        stroke: 'rgb(34, 197, 94)',
+                                        fill: 'rgba(34, 197, 94, 0.1)',
+                                        width: 2,
+                                        value: (self, rawValue) => rawValue == null ? '-' : formatBytes(rawValue) + '/s'
+                                    },
+                                    {
+                                        label: 'Upload',
+                                        stroke: 'rgb(59, 130, 246)',
+                                        fill: 'rgba(59, 130, 246, 0.1)',
+                                        width: 2,
+                                        value: (self, rawValue) => rawValue == null ? '-' : formatBytes(rawValue) + '/s'
+                                    }
+                                ],
+                                axes: [
+                                    {
+                                        // X-axis (time)
+                                        show: false
+                                    },
+                                    {
+                                        // Y-axis (bytes/s)
+                                        stroke: isDark ? '#9ca3af' : '#6b7280',
+                                        grid: {
+                                            stroke: isDark ? '#374151' : '#e5e7eb',
+                                            width: 1
                                         },
-                                        {
-                                            label: 'Upload',
-                                            data: [...history.tx],
-                                            borderColor: 'rgb(59, 130, 246)',
-                                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                            tension: 0.4,
-                                            fill: true,
-                                            pointRadius: 0
-                                        }
-                                    ]
+                                        values: (self, ticks) => ticks.map(v => formatBytes(v) + '/s'),
+                                        size: 50
+                                    }
+                                ],
+                                legend: {
+                                    show: true
                                 },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    interaction: {
-                                        intersect: false,
-                                        mode: 'index'
-                                    },
-                                    plugins: {
-                                        legend: {
-                                            display: true,
-                                            position: 'bottom',
-                                            labels: {
-                                                color: document.documentElement.classList.contains('dark') ? '#9ca3af' : '#4b5563',
-                                                boxWidth: 12,
-                                                padding: 10,
-                                                font: { size: 10 }
-                                            }
-                                        },
-                                        tooltip: {
-                                            callbacks: {
-                                                label: function(context) {
-                                                    return context.dataset.label + ': ' + formatBytes(context.parsed.y) + '/s';
-                                                }
-                                            }
-                                        }
-                                    },
-                                    scales: {
-                                        x: {
-                                            display: false
-                                        },
-                                        y: {
-                                            beginAtZero: true,
-                                            ticks: {
-                                                color: document.documentElement.classList.contains('dark') ? '#9ca3af' : '#6b7280',
-                                                callback: function(value) {
-                                                    return formatBytes(value) + '/s';
-                                                },
-                                                font: { size: 10 }
-                                            },
-                                            grid: {
-                                                color: document.documentElement.classList.contains('dark') ? '#374151' : '#e5e7eb'
-                                            }
-                                        }
+                                cursor: {
+                                    drag: {
+                                        x: false,
+                                        y: false
                                     }
                                 }
-                            });
+                            };
+
+                            // uPlot data format: [[timestamps], [rx_values], [tx_values]]
+                            const data = [
+                                [...history.timestamps],
+                                [...history.rx],
+                                [...history.tx]
+                            ];
+
+                            globalCharts[conn.interface] = new uPlot(opts, data, chartDiv);
                         } else {
-                            // Update existing chart - verify canvas is still valid
+                            // Update existing chart
                             const chart = globalCharts[conn.interface];
-                            if (chart && chart.canvas && chart.canvas.isConnected) {
+                            if (chart && chart.root && chart.root.isConnected) {
                                 try {
-                                    chart.data.labels = [...history.timestamps];
-                                    chart.data.datasets[0].data = [...history.rx];
-                                    chart.data.datasets[1].data = [...history.tx];
-                                    chart.update('none');
+                                    // uPlot data format: [[timestamps], [rx_values], [tx_values]]
+                                    const data = [
+                                        [...history.timestamps],
+                                        [...history.rx],
+                                        [...history.tx]
+                                    ];
+                                    chart.setData(data);
                                 } catch (e) {
                                     console.error('Chart update failed:', e);
                                     // Destroy broken chart
