@@ -150,13 +150,13 @@ async def get_system_health() -> SystemHealth:
             messages.append("PIA credentials not configured")
             healthy = False
 
-        # Check PIA connection
+        # Check VPN connections (multi-region support)
         pia_service = get_pia_service()
-        pia_status = await pia_service.get_status()
-        pia_connected = pia_status["connected"]
+        active_connections = await pia_service.get_active_connections()
+        vpn_connected = len(active_connections) > 0
 
-        if not pia_connected:
-            messages.append("PIA VPN not connected")
+        if not vpn_connected:
+            messages.append("No VPN connections active")
 
         # Check Tailscale
         tailscale_service = get_tailscale_service()
@@ -173,7 +173,7 @@ async def get_system_health() -> SystemHealth:
 
         if not ip_forwarding:
             messages.append("IP forwarding not enabled")
-            if pia_connected:
+            if vpn_connected:
                 healthy = False
 
         # If everything is OK
@@ -183,7 +183,7 @@ async def get_system_health() -> SystemHealth:
         return SystemHealth(
             healthy=healthy,
             pia_configured=pia_configured,
-            pia_connected=pia_connected,
+            pia_connected=vpn_connected,
             tailscale_running=tailscale_running,
             ip_forwarding_enabled=ip_forwarding,
             messages=messages

@@ -6,6 +6,7 @@
     <title>Tailscale PIA Router</title>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'media'
@@ -19,76 +20,128 @@
             <div class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
                 <div class="flex justify-between items-center">
                     <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Tailscale PIA Router</h1>
-                    <a href="/settings" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">Settings</a>
+                    <div class="flex items-center space-x-6">
+                        <!-- Compact Status Indicators -->
+                        <div class="flex items-center space-x-2">
+                            <div :class="vpnStatus.active_count > 0 ? 'bg-green-500' : 'bg-gray-500'" class="w-2.5 h-2.5 rounded-full"></div>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">
+                                <span x-text="vpnStatus.active_count"></span> VPN
+                            </span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div :class="tailscaleStatus.running ? 'bg-green-500' : 'bg-red-500'" class="w-2.5 h-2.5 rounded-full"></div>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Tailscale</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div :class="systemHealth.healthy ? 'bg-green-500' : 'bg-yellow-500'" class="w-2.5 h-2.5 rounded-full"></div>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">System</span>
+                        </div>
+                        <a href="/settings" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm">Settings</a>
+                    </div>
                 </div>
             </div>
         </header>
 
         <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-            <!-- Status Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <!-- VPN Connections Card -->
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">VPN Connections</h2>
-                    <div class="space-y-2">
-                        <div class="flex items-center">
-                            <div :class="vpnStatus.active_count > 0 ? 'bg-green-500' : 'bg-gray-500'" class="w-3 h-3 rounded-full mr-2"></div>
-                            <span class="text-sm dark:text-gray-200" x-text="vpnStatus.active_count > 0 ? `${vpnStatus.active_count} active connection${vpnStatus.active_count > 1 ? 's' : ''}` : 'No active connections'"></span>
-                        </div>
-                        <template x-if="vpnStatus.connections && vpnStatus.connections.length > 0">
-                            <div class="mt-3 space-y-3">
-                                <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
-                                    <div class="text-sm border-l-2 border-blue-500 pl-3 py-1">
-                                        <div class="font-medium text-gray-900 dark:text-white" x-text="conn.region_name"></div>
-                                        <div class="text-xs text-gray-600 dark:text-gray-400 mt-1 space-y-0.5">
-                                            <div>
-                                                <span class="font-medium">Interface:</span>
-                                                <span x-text="conn.interface"></span>
-                                            </div>
-                                            <div>
-                                                <span class="font-medium">Last Handshake:</span>
-                                                <span x-text="conn.last_handshake || 'N/A'"></span>
-                                            </div>
-                                            <template x-if="conn.transfer_rx && conn.transfer_tx">
-                                                <div>
-                                                    <span class="font-medium">Transfer:</span>
-                                                    <span x-text="`↓ ${conn.transfer_rx}, ↑ ${conn.transfer_tx}`"></span>
-                                                </div>
-                                            </template>
-                                        </div>
-                                    </div>
-                                </template>
+            <!-- Network Topology Visualization -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Network Topology</h2>
+                <div class="flex items-center justify-center py-8">
+                    <!-- Tailscale Network (Left) -->
+                    <div class="flex flex-col items-center space-y-3">
+                        <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Tailscale Network</div>
+                        <template x-for="device in devices.filter(d => d.region_id)" :key="device.id">
+                            <div class="flex items-center space-x-2 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg">
+                                <div :class="device.online ? 'bg-green-500' : 'bg-gray-500'" class="w-2 h-2 rounded-full"></div>
+                                <span class="text-sm text-gray-900 dark:text-white" x-text="device.hostname"></span>
+                                <span class="text-xs text-gray-500 dark:text-gray-400" x-text="device.ip_addresses[0]"></span>
                             </div>
                         </template>
-                    </div>
-                </div>
-
-                <!-- Tailscale Status Card -->
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Tailscale Status</h2>
-                    <div class="space-y-2">
-                        <div class="flex items-center">
-                            <div :class="tailscaleStatus.running ? 'bg-green-500' : 'bg-red-500'" class="w-3 h-3 rounded-full mr-2"></div>
-                            <span class="text-sm dark:text-gray-200" x-text="tailscaleStatus.running ? 'Running' : 'Not Running'"></span>
-                        </div>
-                        <div x-show="tailscaleStatus.hostname" class="text-sm text-gray-600 dark:text-gray-400">
-                            <span class="font-medium">Hostname:</span> <span x-text="tailscaleStatus.hostname"></span>
+                        <div x-show="devices.filter(d => d.region_id).length === 0" class="text-sm text-gray-500 dark:text-gray-400 italic">
+                            No devices routing through VPN
                         </div>
                     </div>
-                </div>
 
-                <!-- System Health Card -->
-                <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">System Health</h2>
-                    <div class="space-y-2">
-                        <div class="flex items-center">
-                            <div :class="systemHealth.healthy ? 'bg-green-500' : 'bg-yellow-500'" class="w-3 h-3 rounded-full mr-2"></div>
-                            <span class="text-sm dark:text-gray-200" x-text="systemHealth.healthy ? 'Healthy' : 'Issues Detected'"></span>
-                        </div>
-                        <template x-for="message in systemHealth.messages" :key="message">
-                            <div class="text-xs text-gray-600 dark:text-gray-400" x-text="message"></div>
+                    <!-- Arrow / Connection -->
+                    <div class="mx-12 flex flex-col items-center">
+                        <svg class="w-24 h-12" viewBox="0 0 100 50" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                                    <polygon points="0 0, 10 3, 0 6" class="fill-blue-500" />
+                                </marker>
+                            </defs>
+                            <line x1="10" y1="25" x2="90" y2="25" class="stroke-blue-500 stroke-2" marker-end="url(#arrowhead)" />
+                        </svg>
+                        <span class="text-xs text-gray-500 dark:text-gray-400 mt-1">Exit Node</span>
+                    </div>
+
+                    <!-- PIA Exit Nodes (Right) -->
+                    <div class="flex flex-col items-center space-y-3">
+                        <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">PIA Exit Nodes</div>
+                        <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
+                            <div class="flex items-center space-x-2 bg-green-50 dark:bg-green-900/20 px-4 py-2 rounded-lg">
+                                <div class="bg-green-500 w-2 h-2 rounded-full"></div>
+                                <span class="text-sm font-medium text-gray-900 dark:text-white" x-text="conn.region_name"></span>
+                                <span class="text-xs text-gray-500 dark:text-gray-400" x-text="conn.interface"></span>
+                            </div>
                         </template>
+                        <div x-show="vpnStatus.connections.length === 0" class="text-sm text-gray-500 dark:text-gray-400 italic">
+                            No VPN connections
+                        </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- VPN Connection Cards Grid -->
+            <div x-show="vpnStatus.connections && vpnStatus.connections.length > 0">
+                <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">VPN Connections</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                    <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
+                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                            <!-- Connection Header -->
+                            <div class="flex items-center justify-between mb-4">
+                                <div>
+                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white" x-text="conn.region_name"></h3>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400" x-text="conn.interface"></p>
+                                </div>
+                                <div class="bg-green-500 w-3 h-3 rounded-full"></div>
+                            </div>
+
+                            <!-- Stats -->
+                            <div class="space-y-2 mb-4">
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-600 dark:text-gray-400">Last Handshake</span>
+                                    <span class="text-gray-900 dark:text-white font-medium" x-text="conn.last_handshake || 'N/A'"></span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-600 dark:text-gray-400">↓ Received</span>
+                                    <span class="text-gray-900 dark:text-white font-medium" x-text="conn.transfer_rx || '0 B'"></span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-600 dark:text-gray-400">↑ Sent</span>
+                                    <span class="text-gray-900 dark:text-white font-medium" x-text="conn.transfer_tx || '0 B'"></span>
+                                </div>
+                            </div>
+
+                            <!-- Transfer Rate Chart -->
+                            <div class="mt-4">
+                                <canvas :id="'chart-' + conn.interface" class="w-full" style="height: 150px;"></canvas>
+                            </div>
+
+                            <!-- Devices using this connection -->
+                            <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                <div class="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Devices</div>
+                                <div class="space-y-1">
+                                    <template x-for="device in devices.filter(d => d.region_id === conn.region_id)" :key="device.id">
+                                        <div class="text-xs text-gray-600 dark:text-gray-400 flex items-center space-x-1">
+                                            <div :class="device.online ? 'bg-green-500' : 'bg-gray-500'" class="w-1.5 h-1.5 rounded-full"></div>
+                                            <span x-text="device.hostname"></span>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
                 </div>
             </div>
 
@@ -108,7 +161,6 @@
                         </thead>
                         <template x-for="device in devices" :key="device.id">
                             <tbody class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                                <!-- Main device row -->
                                 <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-sm font-medium text-gray-900 dark:text-white" x-text="device.hostname"></div>
@@ -123,7 +175,6 @@
                                         <span :class="device.online ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'" class="px-2 py-1 text-xs rounded-full" x-text="device.online ? 'Online' : 'Offline'"></span>
                                     </td>
                                     <td class="px-6 py-4">
-                                        <!-- Region selector for all devices. Setting region enables routing, clearing disables it. -->
                                         <select
                                             @change="setDeviceRegion(device.id, $event.target.value)"
                                             class="text-sm rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
@@ -132,7 +183,6 @@
                                                 <option :value="region.id" :selected="device.region_id === region.id" x-text="`${region.name} (${region.country})`"></option>
                                             </template>
                                         </select>
-                                        <!-- Show routing status indicator -->
                                         <div x-show="device.region_id" class="mt-1 text-xs" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'">
                                             <span x-text="device.routing_enabled ? '✓ Routing enabled' : '⏳ Connecting...'"></span>
                                             <span x-show="device.auto_managed" class="ml-1 text-gray-500 dark:text-gray-400">(Set exit node in Tailscale app)</span>
@@ -161,8 +211,9 @@
                 regions: [],
                 selectedRegion: '',
                 devices: [],
-                expandedDevices: [],
                 pollInterval: null,
+                charts: {},
+                transferHistory: {},
 
                 async init() {
                     await this.loadRegions();
@@ -184,21 +235,16 @@
 
                 async refreshStatus() {
                     await Promise.all([
-                        this.loadPIAStatus(),
                         this.loadVPNStatus(),
                         this.loadTailscaleStatus(),
                         this.loadSystemHealth(),
                         this.loadDevices()
                     ]);
-                },
 
-                async loadPIAStatus() {
-                    try {
-                        const response = await fetch('/api/status/pia');
-                        this.piaStatus = await response.json();
-                    } catch (error) {
-                        console.error('Failed to load PIA status:', error);
-                    }
+                    // Update charts after status is loaded
+                    this.$nextTick(() => {
+                        this.updateCharts();
+                    });
                 },
 
                 async loadVPNStatus() {
@@ -207,7 +253,6 @@
                         this.vpnStatus = await response.json();
                     } catch (error) {
                         console.error('Failed to load VPN status:', error);
-                        // Fallback to empty connections if endpoint fails
                         this.vpnStatus = {
                             active_count: 0,
                             connections: []
@@ -244,9 +289,6 @@
                 },
 
                 async setDeviceRegion(deviceId, regionId) {
-                    // Allow empty regionId to clear region selection
-                    // Empty/null regionId will disable routing and clean up VPN if unused
-
                     try {
                         const response = await fetch(`/api/devices/${deviceId}/region`, {
                             method: 'POST',
@@ -257,31 +299,182 @@
                         if (!response.ok) {
                             const error = await response.json();
                             alert('Failed to set device region: ' + error.detail);
-                            await this.loadDevices(); // Reload to reset selector
+                            await this.loadDevices();
                         } else {
                             const data = await response.json();
                             await this.loadDevices();
-                            await this.loadVPNStatus(); // Refresh VPN status to show new region
-                            // Show message with exit node instructions
+                            await this.loadVPNStatus();
                             if (data.message) {
                                 console.log('✓ ' + data.message);
                             }
                         }
                     } catch (error) {
                         alert('Failed to set device region: ' + error.message);
-                        await this.loadDevices(); // Reload to reset selector
+                        await this.loadDevices();
                     }
                 },
 
-                toggleDeviceExpanded(deviceId) {
-                    const index = this.expandedDevices.indexOf(deviceId);
-                    if (index > -1) {
-                        this.expandedDevices.splice(index, 1);
-                    } else {
-                        this.expandedDevices.push(deviceId);
-                    }
+                updateCharts() {
+                    // Create/update charts for each VPN connection
+                    this.vpnStatus.connections.forEach(conn => {
+                        const chartId = 'chart-' + conn.interface;
+                        const canvas = document.getElementById(chartId);
+
+                        if (!canvas) return;
+
+                        // Initialize transfer history for this connection
+                        if (!this.transferHistory[conn.interface]) {
+                            this.transferHistory[conn.interface] = {
+                                timestamps: [],
+                                rx: [],
+                                tx: [],
+                                prevRx: 0,
+                                prevTx: 0
+                            };
+                        }
+
+                        const history = this.transferHistory[conn.interface];
+                        const now = new Date();
+
+                        // Parse transfer values (e.g., "57.65 MiB received" -> bytes)
+                        const rxBytes = this.parseTransferToBytes(conn.transfer_rx);
+                        const txBytes = this.parseTransferToBytes(conn.transfer_tx);
+
+                        // Calculate rates (bytes per 5 seconds = polling interval)
+                        const rxRate = rxBytes - history.prevRx;
+                        const txRate = txBytes - history.prevTx;
+
+                        history.prevRx = rxBytes;
+                        history.prevTx = txBytes;
+
+                        // Add to history (keep last 20 data points = 100 seconds)
+                        history.timestamps.push(now.toLocaleTimeString());
+                        history.rx.push(rxRate > 0 ? rxRate / 5 : 0); // bytes per second
+                        history.tx.push(txRate > 0 ? txRate / 5 : 0);
+
+                        if (history.timestamps.length > 20) {
+                            history.timestamps.shift();
+                            history.rx.shift();
+                            history.tx.shift();
+                        }
+
+                        // Create or update chart
+                        if (!this.charts[conn.interface]) {
+                            const ctx = canvas.getContext('2d');
+                            this.charts[conn.interface] = new Chart(ctx, {
+                                type: 'line',
+                                data: {
+                                    labels: history.timestamps,
+                                    datasets: [
+                                        {
+                                            label: 'Download',
+                                            data: history.rx,
+                                            borderColor: 'rgb(34, 197, 94)',
+                                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                                            tension: 0.4,
+                                            fill: true
+                                        },
+                                        {
+                                            label: 'Upload',
+                                            data: history.tx,
+                                            borderColor: 'rgb(59, 130, 246)',
+                                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                            tension: 0.4,
+                                            fill: true
+                                        }
+                                    ]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    interaction: {
+                                        intersect: false,
+                                        mode: 'index'
+                                    },
+                                    plugins: {
+                                        legend: {
+                                            display: true,
+                                            position: 'bottom',
+                                            labels: {
+                                                color: document.documentElement.classList.contains('dark') ? '#9ca3af' : '#4b5563',
+                                                boxWidth: 12,
+                                                padding: 10,
+                                                font: { size: 10 }
+                                            }
+                                        },
+                                        tooltip: {
+                                            callbacks: {
+                                                label: function(context) {
+                                                    return context.dataset.label + ': ' + formatBytes(context.parsed.y) + '/s';
+                                                }
+                                            }
+                                        }
+                                    },
+                                    scales: {
+                                        x: {
+                                            display: false
+                                        },
+                                        y: {
+                                            beginAtZero: true,
+                                            ticks: {
+                                                color: document.documentElement.classList.contains('dark') ? '#9ca3af' : '#6b7280',
+                                                callback: function(value) {
+                                                    return formatBytes(value) + '/s';
+                                                },
+                                                font: { size: 10 }
+                                            },
+                                            grid: {
+                                                color: document.documentElement.classList.contains('dark') ? '#374151' : '#e5e7eb'
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        } else {
+                            // Update existing chart
+                            const chart = this.charts[conn.interface];
+                            chart.data.labels = history.timestamps;
+                            chart.data.datasets[0].data = history.rx;
+                            chart.data.datasets[1].data = history.tx;
+                            chart.update('none'); // Update without animation for smoother updates
+                        }
+                    });
+                },
+
+                parseTransferToBytes(transferStr) {
+                    if (!transferStr) return 0;
+
+                    // Extract number and unit (e.g., "57.65 MiB received" -> ["57.65", "MiB"])
+                    const match = transferStr.match(/([\d.]+)\s*([KMGT]i?B)/i);
+                    if (!match) return 0;
+
+                    const value = parseFloat(match[1]);
+                    const unit = match[2].toUpperCase();
+
+                    const multipliers = {
+                        'B': 1,
+                        'KB': 1000,
+                        'KIB': 1024,
+                        'MB': 1000 * 1000,
+                        'MIB': 1024 * 1024,
+                        'GB': 1000 * 1000 * 1000,
+                        'GIB': 1024 * 1024 * 1024,
+                        'TB': 1000 * 1000 * 1000 * 1000,
+                        'TIB': 1024 * 1024 * 1024 * 1024
+                    };
+
+                    return value * (multipliers[unit] || 1);
                 }
             }
+        }
+
+        // Utility function for formatting bytes
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
     </script>
 </body>
