@@ -364,22 +364,7 @@
                     const links = [];
                     const centerX = width / 2;
                     const centerY = height / 2;
-                    const meshRadius = 140;  // Even looser mesh to avoid overlaps
-
-                    // Group devices by their exit region
-                    const devicesByRegion = {};
-                    const devicesWithoutRegion = [];
-
-                    this.devices.forEach(device => {
-                        if (device.region_id) {
-                            if (!devicesByRegion[device.region_id]) {
-                                devicesByRegion[device.region_id] = [];
-                            }
-                            devicesByRegion[device.region_id].push(device);
-                        } else {
-                            devicesWithoutRegion.push(device);
-                        }
-                    });
+                    const meshRadius = 140;
 
                     // Position PIA exit nodes ONLY on left and right sides
                     const piaCount = this.vpnStatus.connections.length;
@@ -420,34 +405,11 @@
                         node.y = centerY + (idx - (rightPiaNodes.length - 1) / 2) * 100;
                     });
 
-                    // Collect all devices with their side assignment
-                    const leftSideDevices = [];
-                    const rightSideDevices = [];
-
-                    Object.keys(devicesByRegion).forEach(regionId => {
-                        const piaNode = piaNodes[regionId];
-                        if (!piaNode) return;
-
-                        devicesByRegion[regionId].forEach(device => {
-                            if (piaNode.isLeft) {
-                                leftSideDevices.push(device);
-                            } else {
-                                rightSideDevices.push(device);
-                            }
-                        });
-                    });
-
-                    // Position left-side devices evenly on the left semicircle
-                    leftSideDevices.forEach((device, idx) => {
-                        // Left side: angles from 45° to 315° (wider range for better spacing)
-                        const startAngle = Math.PI / 4;  // 45°
-                        const endAngle = Math.PI * 7 / 4;  // 315°
-                        const totalAngle = endAngle - startAngle;
-
-                        // Distribute evenly
-                        const angle = leftSideDevices.length === 1
-                            ? Math.PI  // 180° if only one device
-                            : startAngle + (idx / (leftSideDevices.length - 1)) * totalAngle;
+                    // Position ALL devices evenly in a RING (circle)
+                    const deviceCount = this.devices.length;
+                    this.devices.forEach((device, idx) => {
+                        // Distribute evenly around full 360° circle
+                        const angle = (idx / deviceCount) * 2 * Math.PI - Math.PI / 2; // Start at top
 
                         nodes.push({
                             id: `device-${device.id}`,
@@ -458,66 +420,6 @@
                             x: centerX + meshRadius * Math.cos(angle),
                             y: centerY + meshRadius * Math.sin(angle)
                         });
-                    });
-
-                    // Position right-side devices evenly on the right semicircle
-                    rightSideDevices.forEach((device, idx) => {
-                        // Right side: angles from -135° to 135° (270° total range)
-                        const startAngle = -Math.PI * 3 / 4;  // -135°
-                        const endAngle = Math.PI * 3 / 4;  // 135°
-                        const totalAngle = endAngle - startAngle;
-
-                        // Distribute evenly
-                        const angle = rightSideDevices.length === 1
-                            ? 0  // 0° if only one device
-                            : startAngle + (idx / (rightSideDevices.length - 1)) * totalAngle;
-
-                        nodes.push({
-                            id: `device-${device.id}`,
-                            label: device.hostname,
-                            type: 'device',
-                            online: device.online,
-                            region_id: device.region_id,
-                            x: centerX + meshRadius * Math.cos(angle),
-                            y: centerY + meshRadius * Math.sin(angle)
-                        });
-                    });
-
-                    // Position devices without exit regions at top and bottom with proper spacing
-                    devicesWithoutRegion.forEach((device, idx) => {
-                        // Alternate top and bottom
-                        const isTop = idx % 2 === 0;
-                        const sideCount = Math.ceil(devicesWithoutRegion.length / 2);
-                        const sideIdx = Math.floor(idx / 2);
-
-                        // Top: -45° to 45° range, Bottom: 135° to 225° range
-                        if (isTop) {
-                            const angle = sideCount === 1
-                                ? -Math.PI / 2  // -90° (top center)
-                                : -Math.PI / 4 + (sideIdx / (sideCount - 1)) * Math.PI / 2;
-                            nodes.push({
-                                id: `device-${device.id}`,
-                                label: device.hostname,
-                                type: 'device',
-                                online: device.online,
-                                region_id: device.region_id,
-                                x: centerX + meshRadius * Math.cos(angle),
-                                y: centerY + meshRadius * Math.sin(angle)
-                            });
-                        } else {
-                            const angle = sideCount === 1
-                                ? Math.PI / 2  // 90° (bottom center)
-                                : Math.PI * 3 / 4 + (sideIdx / (sideCount - 1)) * Math.PI / 2;
-                            nodes.push({
-                                id: `device-${device.id}`,
-                                label: device.hostname,
-                                type: 'device',
-                                online: device.online,
-                                region_id: device.region_id,
-                                x: centerX + meshRadius * Math.cos(angle),
-                                y: centerY + meshRadius * Math.sin(angle)
-                            });
-                        }
                     });
 
                     // Create mesh connections between all devices
@@ -533,20 +435,17 @@
                     }
 
                     // Add exit connections from devices to their PIA regions
-                    Object.keys(devicesByRegion).forEach(regionId => {
-                        const piaNode = piaNodes[regionId];
-                        if (!piaNode) return;
-
-                        devicesByRegion[regionId].forEach(device => {
-                            const deviceNode = nodes.find(n => n.id === `device-${device.id}`);
-                            if (deviceNode) {
+                    deviceNodes.forEach(deviceNode => {
+                        if (deviceNode.region_id) {
+                            const piaNode = piaNodes[deviceNode.region_id];
+                            if (piaNode) {
                                 links.push({
                                     source: deviceNode,
                                     target: piaNode,
                                     type: 'exit'
                                 });
                             }
-                        });
+                        }
                     });
 
                     // Update links
