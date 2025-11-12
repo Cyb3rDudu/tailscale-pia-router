@@ -384,7 +384,7 @@ persistent-keepalive={keepalive}
 
 [ipv4]
 address1={address}
-dns={dns_setting}
+dns={dns}
 dns-priority=50
 ignore-auto-dns=yes
 method=manual
