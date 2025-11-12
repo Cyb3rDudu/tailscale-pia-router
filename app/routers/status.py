@@ -92,7 +92,9 @@ async def get_vpn_status() -> dict:
                 "interface": interface,
                 "last_handshake": interface_details.get("last_handshake", "N/A"),
                 "transfer_rx": interface_details.get("transfer_rx"),
-                "transfer_tx": interface_details.get("transfer_tx")
+                "transfer_tx": interface_details.get("transfer_tx"),
+                "transfer_rx_bytes": interface_details.get("transfer_rx_bytes", 0),
+                "transfer_tx_bytes": interface_details.get("transfer_tx_bytes", 0)
             })
 
         return {

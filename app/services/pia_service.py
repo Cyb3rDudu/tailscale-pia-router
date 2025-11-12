@@ -706,7 +706,7 @@ method=disabled
             interface_name: WireGuard interface name (e.g., pia-sg-singapo)
 
         Returns:
-            Dictionary with interface details including handshake time
+            Dictionary with interface details including handshake time and transfer bytes
         """
         try:
             # Get WireGuard interface stats
@@ -721,7 +721,9 @@ method=disabled
                 "interface": interface_name,
                 "last_handshake": None,
                 "transfer_rx": None,
-                "transfer_tx": None
+                "transfer_tx": None,
+                "transfer_rx_bytes": 0,
+                "transfer_tx_bytes": 0
             }
 
             # Parse wg show output
@@ -737,8 +739,14 @@ method=disabled
                     if "received" in transfer_text and "sent" in transfer_text:
                         parts = transfer_text.split(",")
                         if len(parts) == 2:
-                            details["transfer_rx"] = parts[0].strip()
-                            details["transfer_tx"] = parts[1].strip()
+                            rx_str = parts[0].strip()
+                            tx_str = parts[1].strip()
+                            details["transfer_rx"] = rx_str
+                            details["transfer_tx"] = tx_str
+
+                            # Parse to bytes for rate calculation
+                            details["transfer_rx_bytes"] = self._parse_transfer_to_bytes(rx_str)
+                            details["transfer_tx_bytes"] = self._parse_transfer_to_bytes(tx_str)
 
             return details
 
@@ -748,8 +756,45 @@ method=disabled
                 "interface": interface_name,
                 "last_handshake": "N/A",
                 "transfer_rx": None,
-                "transfer_tx": None
+                "transfer_tx": None,
+                "transfer_rx_bytes": 0,
+                "transfer_tx_bytes": 0
             }
+
+    def _parse_transfer_to_bytes(self, transfer_str: str) -> int:
+        """Parse transfer string to bytes.
+
+        Args:
+            transfer_str: String like "57.65 MiB received" or "3.21 GiB sent"
+
+        Returns:
+            Number of bytes
+        """
+        if not transfer_str:
+            return 0
+
+        # Extract number and unit (e.g., "57.65 MiB received" -> ["57.65", "MiB"])
+        import re
+        match = re.match(r'([\d.]+)\s*([KMGT]i?B)', transfer_str, re.IGNORECASE)
+        if not match:
+            return 0
+
+        value = float(match.group(1))
+        unit = match.group(2).upper()
+
+        multipliers = {
+            'B': 1,
+            'KB': 1000,
+            'KIB': 1024,
+            'MB': 1000 * 1000,
+            'MIB': 1024 * 1024,
+            'GB': 1000 * 1000 * 1000,
+            'GIB': 1024 * 1024 * 1024,
+            'TB': 1000 * 1000 * 1000 * 1000,
+            'TIB': 1024 * 1024 * 1024 * 1024
+        }
+
+        return int(value * multipliers.get(unit, 1))
 
     async def get_region_status(self, region_id: str) -> Dict:
         """Get status of a specific region connection.

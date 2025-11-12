@@ -6,12 +6,31 @@
     <title>Tailscale PIA Router</title>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         tailwind.config = {
             darkMode: 'media'
         }
     </script>
+    <style>
+        .network-link {
+            stroke: #3b82f6;
+            stroke-width: 2px;
+            marker-end: url(#arrowhead);
+        }
+        .network-node {
+            cursor: pointer;
+        }
+        .network-node circle {
+            stroke: #fff;
+            stroke-width: 2px;
+        }
+        .network-node text {
+            font-size: 12px;
+            pointer-events: none;
+        }
+    </style>
 </head>
 <body class="bg-gray-100 dark:bg-gray-900" x-data="app()" x-init="init()">
     <div class="min-h-screen">
@@ -43,53 +62,10 @@
         </header>
 
         <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-            <!-- Network Topology Visualization -->
+            <!-- Network Topology Mesh -->
             <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Network Topology</h2>
-                <div class="flex items-center justify-center py-8">
-                    <!-- Tailscale Network (Left) -->
-                    <div class="flex flex-col items-center space-y-3">
-                        <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Tailscale Network</div>
-                        <template x-for="device in devices.filter(d => d.region_id)" :key="device.id">
-                            <div class="flex items-center space-x-2 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg">
-                                <div :class="device.online ? 'bg-green-500' : 'bg-gray-500'" class="w-2 h-2 rounded-full"></div>
-                                <span class="text-sm text-gray-900 dark:text-white" x-text="device.hostname"></span>
-                                <span class="text-xs text-gray-500 dark:text-gray-400" x-text="device.ip_addresses[0]"></span>
-                            </div>
-                        </template>
-                        <div x-show="devices.filter(d => d.region_id).length === 0" class="text-sm text-gray-500 dark:text-gray-400 italic">
-                            No devices routing through VPN
-                        </div>
-                    </div>
-
-                    <!-- Arrow / Connection -->
-                    <div class="mx-12 flex flex-col items-center">
-                        <svg class="w-24 h-12" viewBox="0 0 100 50" xmlns="http://www.w3.org/2000/svg">
-                            <defs>
-                                <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                                    <polygon points="0 0, 10 3, 0 6" class="fill-blue-500" />
-                                </marker>
-                            </defs>
-                            <line x1="10" y1="25" x2="90" y2="25" class="stroke-blue-500 stroke-2" marker-end="url(#arrowhead)" />
-                        </svg>
-                        <span class="text-xs text-gray-500 dark:text-gray-400 mt-1">Exit Node</span>
-                    </div>
-
-                    <!-- PIA Exit Nodes (Right) -->
-                    <div class="flex flex-col items-center space-y-3">
-                        <div class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">PIA Exit Nodes</div>
-                        <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
-                            <div class="flex items-center space-x-2 bg-green-50 dark:bg-green-900/20 px-4 py-2 rounded-lg">
-                                <div class="bg-green-500 w-2 h-2 rounded-full"></div>
-                                <span class="text-sm font-medium text-gray-900 dark:text-white" x-text="conn.region_name"></span>
-                                <span class="text-xs text-gray-500 dark:text-gray-400" x-text="conn.interface"></span>
-                            </div>
-                        </template>
-                        <div x-show="vpnStatus.connections.length === 0" class="text-sm text-gray-500 dark:text-gray-400 italic">
-                            No VPN connections
-                        </div>
-                    </div>
-                </div>
+                <div id="network-graph" class="w-full" style="height: 400px;"></div>
             </div>
 
             <!-- VPN Connection Cards Grid -->
@@ -114,17 +90,26 @@
                                     <span class="text-gray-900 dark:text-white font-medium" x-text="conn.last_handshake || 'N/A'"></span>
                                 </div>
                                 <div class="flex justify-between text-sm">
-                                    <span class="text-gray-600 dark:text-gray-400">↓ Received</span>
+                                    <span class="text-gray-600 dark:text-gray-400">Total ↓</span>
                                     <span class="text-gray-900 dark:text-white font-medium" x-text="conn.transfer_rx || '0 B'"></span>
                                 </div>
                                 <div class="flex justify-between text-sm">
-                                    <span class="text-gray-600 dark:text-gray-400">↑ Sent</span>
+                                    <span class="text-gray-600 dark:text-gray-400">Total ↑</span>
                                     <span class="text-gray-900 dark:text-white font-medium" x-text="conn.transfer_tx || '0 B'"></span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-600 dark:text-gray-400">Current ↓</span>
+                                    <span class="text-green-600 dark:text-green-400 font-medium" x-text="formatRate(getCurrentRate(conn.interface, 'rx'))"></span>
+                                </div>
+                                <div class="flex justify-between text-sm">
+                                    <span class="text-gray-600 dark:text-gray-400">Current ↑</span>
+                                    <span class="text-blue-600 dark:text-blue-400 font-medium" x-text="formatRate(getCurrentRate(conn.interface, 'tx'))"></span>
                                 </div>
                             </div>
 
-                            <!-- Transfer Rate Chart -->
+                            <!-- Throughput Chart -->
                             <div class="mt-4">
+                                <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">Throughput (last 2 minutes)</div>
                                 <canvas :id="'chart-' + conn.interface" class="w-full" style="height: 150px;"></canvas>
                             </div>
 
@@ -214,10 +199,14 @@
                 pollInterval: null,
                 charts: {},
                 transferHistory: {},
+                networkGraph: null,
 
                 async init() {
                     await this.loadRegions();
                     await this.refreshStatus();
+
+                    // Initialize network graph
+                    this.initNetworkGraph();
 
                     // Poll status every 5 seconds
                     this.pollInterval = setInterval(() => this.refreshStatus(), 5000);
@@ -241,8 +230,9 @@
                         this.loadDevices()
                     ]);
 
-                    // Update charts after status is loaded
+                    // Update visualizations after status is loaded
                     this.$nextTick(() => {
+                        this.updateNetworkGraph();
                         this.updateCharts();
                     });
                 },
@@ -314,6 +304,155 @@
                     }
                 },
 
+                initNetworkGraph() {
+                    const container = document.getElementById('network-graph');
+                    const width = container.clientWidth;
+                    const height = 400;
+
+                    // Create SVG
+                    const svg = d3.select('#network-graph')
+                        .append('svg')
+                        .attr('width', width)
+                        .attr('height', height)
+                        .attr('viewBox', [0, 0, width, height]);
+
+                    // Add arrow marker
+                    svg.append('defs').append('marker')
+                        .attr('id', 'arrowhead')
+                        .attr('viewBox', '-0 -5 10 10')
+                        .attr('refX', 20)
+                        .attr('refY', 0)
+                        .attr('orient', 'auto')
+                        .attr('markerWidth', 8)
+                        .attr('markerHeight', 8)
+                        .append('svg:path')
+                        .attr('d', 'M 0,-5 L 10 ,0 L 0,5')
+                        .attr('fill', '#3b82f6');
+
+                    // Create groups for links and nodes
+                    const linkGroup = svg.append('g').attr('class', 'links');
+                    const nodeGroup = svg.append('g').attr('class', 'nodes');
+
+                    this.networkGraph = { svg, linkGroup, nodeGroup, width, height };
+                },
+
+                updateNetworkGraph() {
+                    if (!this.networkGraph) return;
+
+                    const { svg, linkGroup, nodeGroup, width, height } = this.networkGraph;
+
+                    // Build graph data
+                    const nodes = [];
+                    const links = [];
+
+                    // Add router node (center)
+                    nodes.push({
+                        id: 'router',
+                        label: 'PIA Router',
+                        type: 'router',
+                        x: width / 2,
+                        y: height / 2,
+                        fx: width / 2,
+                        fy: height / 2
+                    });
+
+                    // Add PIA exit node nodes (right side)
+                    this.vpnStatus.connections.forEach((conn, idx) => {
+                        const nodeId = `pia-${conn.interface}`;
+                        nodes.push({
+                            id: nodeId,
+                            label: conn.region_name,
+                            type: 'pia',
+                            x: width * 0.8,
+                            y: height / 2 + (idx - this.vpnStatus.connections.length / 2 + 0.5) * 80
+                        });
+
+                        // Link from router to PIA
+                        links.push({
+                            source: 'router',
+                            target: nodeId
+                        });
+                    });
+
+                    // Add device nodes (left side)
+                    const routedDevices = this.devices.filter(d => d.region_id);
+                    routedDevices.forEach((device, idx) => {
+                        const nodeId = `device-${device.id}`;
+                        nodes.push({
+                            id: nodeId,
+                            label: device.hostname,
+                            type: 'device',
+                            online: device.online,
+                            x: width * 0.2,
+                            y: height / 2 + (idx - routedDevices.length / 2 + 0.5) * 60
+                        });
+
+                        // Link from device to router
+                        links.push({
+                            source: nodeId,
+                            target: 'router'
+                        });
+                    });
+
+                    // Update links
+                    const link = linkGroup.selectAll('line')
+                        .data(links, d => `${d.source}-${d.target}`);
+
+                    link.exit().remove();
+
+                    link.enter()
+                        .append('line')
+                        .attr('class', 'network-link')
+                        .merge(link)
+                        .attr('x1', d => {
+                            const sourceNode = nodes.find(n => n.id === d.source);
+                            return sourceNode ? sourceNode.x : 0;
+                        })
+                        .attr('y1', d => {
+                            const sourceNode = nodes.find(n => n.id === d.source);
+                            return sourceNode ? sourceNode.y : 0;
+                        })
+                        .attr('x2', d => {
+                            const targetNode = nodes.find(n => n.id === d.target);
+                            return targetNode ? targetNode.x : 0;
+                        })
+                        .attr('y2', d => {
+                            const targetNode = nodes.find(n => n.id === d.target);
+                            return targetNode ? targetNode.y : 0;
+                        });
+
+                    // Update nodes
+                    const node = nodeGroup.selectAll('g')
+                        .data(nodes, d => d.id);
+
+                    node.exit().remove();
+
+                    const nodeEnter = node.enter()
+                        .append('g')
+                        .attr('class', 'network-node');
+
+                    nodeEnter.append('circle')
+                        .attr('r', d => d.type === 'router' ? 25 : 20);
+
+                    nodeEnter.append('text')
+                        .attr('dy', 30)
+                        .attr('text-anchor', 'middle')
+                        .attr('class', 'text-gray-900 dark:text-white');
+
+                    nodeEnter.merge(node)
+                        .attr('transform', d => `translate(${d.x},${d.y})`)
+                        .select('circle')
+                        .attr('fill', d => {
+                            if (d.type === 'router') return '#3b82f6';
+                            if (d.type === 'pia') return '#22c55e';
+                            return d.online ? '#10b981' : '#6b7280';
+                        });
+
+                    nodeEnter.merge(node)
+                        .select('text')
+                        .text(d => d.label);
+                },
+
                 updateCharts() {
                     // Create/update charts for each VPN connection
                     this.vpnStatus.connections.forEach(conn => {
@@ -328,31 +467,33 @@
                                 timestamps: [],
                                 rx: [],
                                 tx: [],
-                                prevRx: 0,
-                                prevTx: 0
+                                prevRx: conn.transfer_rx_bytes || 0,
+                                prevTx: conn.transfer_tx_bytes || 0,
+                                prevTime: Date.now()
                             };
                         }
 
                         const history = this.transferHistory[conn.interface];
-                        const now = new Date();
+                        const now = Date.now();
+                        const timeDelta = (now - history.prevTime) / 1000; // seconds
 
-                        // Parse transfer values (e.g., "57.65 MiB received" -> bytes)
-                        const rxBytes = this.parseTransferToBytes(conn.transfer_rx);
-                        const txBytes = this.parseTransferToBytes(conn.transfer_tx);
+                        // Calculate rates (bytes per second)
+                        const rxBytes = conn.transfer_rx_bytes || 0;
+                        const txBytes = conn.transfer_tx_bytes || 0;
 
-                        // Calculate rates (bytes per 5 seconds = polling interval)
-                        const rxRate = rxBytes - history.prevRx;
-                        const txRate = txBytes - history.prevTx;
+                        const rxRate = timeDelta > 0 ? (rxBytes - history.prevRx) / timeDelta : 0;
+                        const txRate = timeDelta > 0 ? (txBytes - history.prevTx) / timeDelta : 0;
 
                         history.prevRx = rxBytes;
                         history.prevTx = txBytes;
+                        history.prevTime = now;
 
-                        // Add to history (keep last 20 data points = 100 seconds)
-                        history.timestamps.push(now.toLocaleTimeString());
-                        history.rx.push(rxRate > 0 ? rxRate / 5 : 0); // bytes per second
-                        history.tx.push(txRate > 0 ? txRate / 5 : 0);
+                        // Add to history (keep last 24 data points = 2 minutes at 5s polling)
+                        history.timestamps.push(new Date().toLocaleTimeString());
+                        history.rx.push(Math.max(0, rxRate)); // Ensure non-negative
+                        history.tx.push(Math.max(0, txRate));
 
-                        if (history.timestamps.length > 20) {
+                        if (history.timestamps.length > 24) {
                             history.timestamps.shift();
                             history.rx.shift();
                             history.tx.shift();
@@ -372,7 +513,8 @@
                                             borderColor: 'rgb(34, 197, 94)',
                                             backgroundColor: 'rgba(34, 197, 94, 0.1)',
                                             tension: 0.4,
-                                            fill: true
+                                            fill: true,
+                                            pointRadius: 0
                                         },
                                         {
                                             label: 'Upload',
@@ -380,7 +522,8 @@
                                             borderColor: 'rgb(59, 130, 246)',
                                             backgroundColor: 'rgba(59, 130, 246, 0.1)',
                                             tension: 0.4,
-                                            fill: true
+                                            fill: true,
+                                            pointRadius: 0
                                         }
                                     ]
                                 },
@@ -436,34 +579,22 @@
                             chart.data.labels = history.timestamps;
                             chart.data.datasets[0].data = history.rx;
                             chart.data.datasets[1].data = history.tx;
-                            chart.update('none'); // Update without animation for smoother updates
+                            chart.update('none');
                         }
                     });
                 },
 
-                parseTransferToBytes(transferStr) {
-                    if (!transferStr) return 0;
+                getCurrentRate(interface_name, direction) {
+                    const history = this.transferHistory[interface_name];
+                    if (!history || !history[direction] || history[direction].length === 0) {
+                        return 0;
+                    }
+                    // Return the latest rate
+                    return history[direction][history[direction].length - 1];
+                },
 
-                    // Extract number and unit (e.g., "57.65 MiB received" -> ["57.65", "MiB"])
-                    const match = transferStr.match(/([\d.]+)\s*([KMGT]i?B)/i);
-                    if (!match) return 0;
-
-                    const value = parseFloat(match[1]);
-                    const unit = match[2].toUpperCase();
-
-                    const multipliers = {
-                        'B': 1,
-                        'KB': 1000,
-                        'KIB': 1024,
-                        'MB': 1000 * 1000,
-                        'MIB': 1024 * 1024,
-                        'GB': 1000 * 1000 * 1000,
-                        'GIB': 1024 * 1024 * 1024,
-                        'TB': 1000 * 1000 * 1000 * 1000,
-                        'TIB': 1024 * 1024 * 1024 * 1024
-                    };
-
-                    return value * (multipliers[unit] || 1);
+                formatRate(bytesPerSecond) {
+                    return formatBytes(bytesPerSecond) + '/s';
                 }
             }
         }
