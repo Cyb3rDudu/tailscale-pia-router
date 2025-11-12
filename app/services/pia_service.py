@@ -39,10 +39,19 @@ class PIAService:
             region_id: PIA region ID
 
         Returns:
-            Interface name (e.g., pia-de, pia-sg, pia-kr-south-korea-pf)
+            Interface name (e.g., pia-de, pia-sg, pia-defra)
         """
         # Replace underscores with dashes for valid Linux interface names
-        return f"{WG_INTERFACE_PREFIX}{region_id.lower().replace('_', '-')}"
+        base_name = f"{WG_INTERFACE_PREFIX}{region_id.lower().replace('_', '-')}"
+
+        # Linux interface names must be <= 15 characters
+        # Truncate if too long, keeping prefix and shortening region
+        if len(base_name) > 15:
+            # Keep "pia-" prefix (4 chars) + up to 11 chars of region
+            region_part = region_id.lower().replace('_', '-')[:11]
+            base_name = f"{WG_INTERFACE_PREFIX}{region_part}"
+
+        return base_name
 
     async def fetch_server_list(self) -> List[Dict]:
         """Fetch PIA server list from API.
