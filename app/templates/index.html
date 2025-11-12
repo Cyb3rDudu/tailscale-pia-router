@@ -684,9 +684,14 @@
                         history.prevTx = txBytes;
                         history.prevTime = now;
 
-                        // Store raw rates
-                        history.rawRx.push(Math.max(0, rawRxRate));
-                        history.rawTx.push(Math.max(0, rawTxRate));
+                        // Apply noise floor: rates below 10 KB/s are treated as zero
+                        const noiseFloor = 10 * 1024; // 10 KB/s
+                        const cleanRxRate = rawRxRate > noiseFloor ? rawRxRate : 0;
+                        const cleanTxRate = rawTxRate > noiseFloor ? rawTxRate : 0;
+
+                        // Store cleaned rates
+                        history.rawRx.push(Math.max(0, cleanRxRate));
+                        history.rawTx.push(Math.max(0, cleanTxRate));
 
                         // Keep last 30 raw samples for moving average calculation
                         if (history.rawRx.length > 30) {
