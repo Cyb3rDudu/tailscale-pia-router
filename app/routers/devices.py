@@ -206,6 +206,18 @@ async def toggle_device_routing(device_id: str, toggle: DeviceRoutingToggle) -> 
         # Update database
         await DeviceRoutingDB.set_enabled(device_id, toggle.enabled)
 
+        # If disabling, check if we need to clean up unused VPN connections
+        if not toggle.enabled:
+            region_id = await DeviceRoutingDB.get_region(device_id)
+            if region_id:
+                # Check if any other devices are using this region
+                devices_using_region = await DeviceRoutingDB.get_devices_by_region(region_id)
+                if not devices_using_region:
+                    # No other devices using this region, disconnect VPN
+                    pia_service = get_pia_service()
+                    await pia_service.disconnect_region(region_id)
+                    logger.info(f"Disconnected unused VPN region {region_id}")
+
         # Log event
         await ConnectionLogDB.add(
             "device_routing",
@@ -317,8 +329,20 @@ async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -
         if not region:
             raise HTTPException(status_code=404, detail="Region not found")
 
+        # Get old region before updating
+        old_region_id = await DeviceRoutingDB.get_region(device_id)
+
         # Update region in database
         await DeviceRoutingDB.set_region(device_id, region_select.region_id)
+
+        # Check if old region needs cleanup
+        if old_region_id and old_region_id != region_select.region_id:
+            devices_using_old_region = await DeviceRoutingDB.get_devices_by_region(old_region_id)
+            if not devices_using_old_region:
+                # No devices using old region anymore, disconnect VPN
+                pia_service = get_pia_service()
+                await pia_service.disconnect_region(old_region_id)
+                logger.info(f"Disconnected unused VPN region {old_region_id}")
 
         # Check device type
         device_os = device.get("os", "").lower()

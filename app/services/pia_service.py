@@ -447,7 +447,7 @@ method=disabled
             return False
 
     async def disconnect_region(self, region_id: str) -> bool:
-        """Disconnect from PIA VPN for a specific region via NetworkManager.
+        """Disconnect from PIA VPN for a specific region via NetworkManager and delete the connection.
 
         Args:
             region_id: PIA region ID
@@ -458,23 +458,27 @@ method=disabled
         try:
             interface_name = self._get_interface_name(region_id)
 
+            # First disconnect if active
             result = subprocess.run(
                 ["nmcli", "connection", "down", interface_name],
                 capture_output=True,
                 text=True,
-                check=True
+                check=False  # Don't fail if not active
             )
 
-            logger.info(f"PIA VPN disconnected from {region_id} via NetworkManager: {result.stdout}")
+            # Then delete the connection configuration
+            result = subprocess.run(
+                ["nmcli", "connection", "delete", interface_name],
+                capture_output=True,
+                text=True,
+                check=False  # Don't fail if doesn't exist
+            )
+
+            logger.info(f"PIA VPN connection {interface_name} disconnected and deleted")
             return True
 
-        except subprocess.CalledProcessError as e:
-            # If connection doesn't exist or already down, that's fine
-            if "not an active connection" in e.stderr.lower() or "no active connection" in e.stderr.lower():
-                logger.info(f"PIA VPN to {region_id} already disconnected")
-                return True
-
-            logger.error(f"Failed to disconnect PIA VPN from {region_id}: {e.stderr}")
+        except Exception as e:
+            logger.error(f"Failed to disconnect PIA VPN from {region_id}: {e}")
             return False
 
     async def connect(self) -> bool:
