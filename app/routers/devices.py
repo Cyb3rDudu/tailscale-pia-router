@@ -1,8 +1,9 @@
 """Devices API router for Tailscale device management."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 import logging
 import json
+import asyncio
 
 from app.models import (
     TailscaleDeviceList,
@@ -304,8 +305,71 @@ async def toggle_device_routing(device_id: str, toggle: DeviceRoutingToggle) -> 
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def _establish_vpn_and_routing(
+    device_id: str,
+    region_id: str,
+    region_data: dict,
+    device_ip: str,
+    device_hostname: str,
+    username: str,
+    password: str
+):
+    """Background task to establish VPN connection and enable routing."""
+    try:
+        logger.info(f"Background task: Establishing VPN for {device_hostname} -> {region_data['name']}")
+
+        pia_service = get_pia_service()
+        routing_service = get_routing_service()
+
+        # Ensure connection to region
+        success = await pia_service.ensure_region_connection(
+            region_id=region_id,
+            region_data=region_data,
+            username=username,
+            password=password
+        )
+
+        if not success:
+            logger.error(f"Background task failed: Could not connect to {region_data['name']}")
+            await ConnectionLogDB.add(
+                "device_region",
+                "error",
+                region_id=region_id,
+                message=f"Failed to connect to {region_data['name']} for device {device_hostname}"
+            )
+            return
+
+        # Enable routing
+        pia_interface = pia_service._get_interface_name(region_id)
+        await routing_service.enable_device_routing(device_ip, pia_interface)
+
+        # Mark as enabled in database
+        await DeviceRoutingDB.set_enabled(device_id, True)
+
+        logger.info(f"Background task complete: {device_hostname} now routing through {region_data['name']}")
+
+        await ConnectionLogDB.add(
+            "device_region",
+            "success",
+            region_id=region_id,
+            message=f"Region set to {region_data['name']} for device {device_hostname}"
+        )
+
+    except Exception as e:
+        logger.error(f"Background task error for {device_hostname}: {e}")
+        await ConnectionLogDB.add(
+            "device_region",
+            "error",
+            message=f"Background task failed for {device_hostname}: {str(e)}"
+        )
+
+
 @router.post("/{device_id}/region")
-async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -> SuccessResponse:
+async def set_device_region(
+    device_id: str,
+    region_select: DeviceRegionSelect,
+    background_tasks: BackgroundTasks
+) -> SuccessResponse:
     """Set PIA region for a specific device, or clear it.
 
     For GUI devices (macOS/iOS): Auto-enables routing when region is selected, auto-disables when cleared.
@@ -391,43 +455,53 @@ async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -
 
         device_ip = ip_addresses[0]
 
-        # Get services
+        # Check if VPN for this region is already active
         pia_service = get_pia_service()
-        routing_service = get_routing_service()
-
-        # Ensure connection to new region
-        success = await pia_service.ensure_region_connection(
-            region_id=region_select.region_id,
-            region_data=region,
-            username=pia_credentials["username"],
-            password=pia_credentials["password"]
+        active_connections = await pia_service.get_active_connections()
+        region_already_active = any(
+            conn["region_id"] == region_select.region_id
+            for conn in active_connections
         )
 
-        if not success:
-            raise Exception(f"Failed to connect to region {region['name']}")
+        if region_already_active:
+            # Region is already connected, enable routing immediately
+            routing_service = get_routing_service()
+            pia_interface = pia_service._get_interface_name(region_select.region_id)
+            await routing_service.enable_device_routing(device_ip, pia_interface)
+            await DeviceRoutingDB.set_enabled(device_id, True)
 
-        # Enable routing to use new interface
-        pia_interface = pia_service._get_interface_name(region_select.region_id)
-        await routing_service.enable_device_routing(device_ip, pia_interface)
+            logger.info(f"Enabled routing for {device['hostname']} to use existing region {region['name']}")
 
-        # Mark routing as enabled in database
-        await DeviceRoutingDB.set_enabled(device_id, True)
+            await ConnectionLogDB.add(
+                "device_region",
+                "success",
+                region_id=region_select.region_id,
+                message=f"Region set to {region['name']} for device {device['hostname']}"
+            )
 
-        logger.info(f"Enabled routing for {device['hostname']} to use region {region['name']}")
-
-        # Log event
-        await ConnectionLogDB.add(
-            "device_region",
-            "success",
-            region_id=region_select.region_id,
-            message=f"Region set to {region['name']} for device {device['hostname']}"
-        )
-
-        # Prepare response message
-        if is_gui_device:
-            message = f"Region set to {region['name']} and routing enabled for {device['hostname']}. Select this container as exit node in Tailscale app."
+            message = f"Region set to {region['name']} and routing enabled for {device['hostname']}"
         else:
-            message = f"Region set to {region['name']} and routing enabled for {device['hostname']}. SSH to device and set Tailscale exit node."
+            # Region not connected yet, start background task to establish VPN
+            logger.info(f"Starting background task to establish VPN for {device['hostname']} -> {region['name']}")
+
+            background_tasks.add_task(
+                _establish_vpn_and_routing,
+                device_id=device_id,
+                region_id=region_select.region_id,
+                region_data=region,
+                device_ip=device_ip,
+                device_hostname=device['hostname'],
+                username=pia_credentials["username"],
+                password=pia_credentials["password"]
+            )
+
+            message = f"Establishing VPN connection to {region['name']} for {device['hostname']}. This may take 10-30 seconds. Routing will be enabled automatically when connected."
+
+        # Add device-specific instructions to message
+        if is_gui_device and region_already_active:
+            message += " Select this container as exit node in Tailscale app."
+        elif not is_gui_device and region_already_active:
+            message += " SSH to device and set Tailscale exit node."
 
         return SuccessResponse(message=message)
 
