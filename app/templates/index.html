@@ -448,19 +448,8 @@
                         });
                     });
 
-                    // Create mesh connections between all devices
+                    // Add exit connections FIRST (so they render behind mesh)
                     const deviceNodes = nodes.filter(n => n.type === 'device');
-                    for (let i = 0; i < deviceNodes.length; i++) {
-                        for (let j = i + 1; j < deviceNodes.length; j++) {
-                            links.push({
-                                source: deviceNodes[i],
-                                target: deviceNodes[j],
-                                type: 'mesh'
-                            });
-                        }
-                    }
-
-                    // Add exit connections from devices to their PIA regions
                     deviceNodes.forEach(deviceNode => {
                         if (deviceNode.region_id) {
                             const piaNode = piaNodes[deviceNode.region_id];
@@ -474,6 +463,17 @@
                         }
                     });
 
+                    // Create mesh connections between all devices (render on top)
+                    for (let i = 0; i < deviceNodes.length; i++) {
+                        for (let j = i + 1; j < deviceNodes.length; j++) {
+                            links.push({
+                                source: deviceNodes[i],
+                                target: deviceNodes[j],
+                                type: 'mesh'
+                            });
+                        }
+                    }
+
                     // Update links
                     const link = linkGroup.selectAll('line')
                         .data(links, d => `${d.source.id}-${d.target.id}`);
@@ -482,9 +482,9 @@
 
                     const linkEnter = link.enter()
                         .append('line')
-                        .attr('stroke', d => d.type === 'mesh' ? '#6b7280' : '#3b82f6')
-                        .attr('stroke-width', d => d.type === 'mesh' ? 1.5 : 2.5)
-                        .attr('stroke-opacity', d => d.type === 'mesh' ? 0.6 : 0.9);
+                        .attr('stroke', d => d.type === 'mesh' ? '#6b7280' : '#60a5fa')  // mesh: gray, exit: lighter blue
+                        .attr('stroke-width', d => d.type === 'mesh' ? 2 : 2)  // mesh: thicker
+                        .attr('stroke-opacity', d => d.type === 'mesh' ? 0.9 : 0.3);  // mesh: solid, exit: light
 
                     linkEnter.merge(link)
                         .attr('x1', d => d.source.x)
@@ -650,6 +650,7 @@
                             const opts = {
                                 width: chartDiv.clientWidth,
                                 height: 150,
+                                padding: [10, 10, 10, 0],  // top, right, bottom, left - no left padding (handled by axis size)
                                 series: [
                                     {
                                         label: 'Time'
@@ -682,7 +683,7 @@
                                             width: 1
                                         },
                                         values: (self, ticks) => ticks.map(v => formatBytes(v) + '/s'),
-                                        size: 50
+                                        size: 70  // Increased from 50 to 70 for full label visibility
                                     }
                                 ],
                                 legend: {
