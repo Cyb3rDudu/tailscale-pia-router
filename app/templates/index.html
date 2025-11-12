@@ -68,12 +68,6 @@
         </header>
 
         <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-            <!-- Network Topology Mesh -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Network Topology</h2>
-                <div id="network-graph" class="w-full" style="height: 400px;"></div>
-            </div>
-
             <!-- VPN Connection Cards Grid -->
             <div x-show="vpnStatus.connections && vpnStatus.connections.length > 0">
                 <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">VPN Connections</h2>
@@ -136,6 +130,12 @@
                         </div>
                     </template>
                 </div>
+            </div>
+
+            <!-- Network Topology Mesh -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Network Topology</h2>
+                <div id="network-graph" class="w-full" style="height: 400px; overflow: hidden;"></div>
             </div>
 
             <!-- Device List -->
