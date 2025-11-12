@@ -359,13 +359,12 @@
 
                     const { svg, linkGroup, nodeGroup, width, height } = this.networkGraph;
 
-                    // Build graph data with FIXED positions, clustered by exit node
+                    // Build graph data with FIXED positions
                     const nodes = [];
                     const links = [];
                     const centerX = width / 2;
                     const centerY = height / 2;
-                    const meshRadius = 100;
-                    const piaRadius = Math.min(width, height) * 0.4;
+                    const meshRadius = 120;  // Looser mesh
 
                     // Group devices by their exit region
                     const devicesByRegion = {};
@@ -382,59 +381,103 @@
                         }
                     });
 
-                    // Position PIA exit nodes evenly around the perimeter
+                    // Position PIA exit nodes ONLY on left and right sides
                     const piaCount = this.vpnStatus.connections.length;
                     const piaNodes = {};
+                    const leftPiaNodes = [];
+                    const rightPiaNodes = [];
 
                     this.vpnStatus.connections.forEach((conn, idx) => {
                         const nodeId = `pia-${conn.region_id}`;
 
-                        // Distribute PIA nodes evenly around the circle
-                        const angle = (idx / piaCount) * 2 * Math.PI - Math.PI / 2; // Start at top
+                        // Alternate between left and right sides
+                        const isLeft = idx % 2 === 0;
+                        const side = isLeft ? leftPiaNodes : rightPiaNodes;
 
                         const piaNode = {
                             id: nodeId,
                             label: conn.region_name,
                             type: 'pia',
                             region_id: conn.region_id,
-                            x: centerX + piaRadius * Math.cos(angle),
-                            y: centerY + piaRadius * Math.sin(angle),
-                            angle: angle  // Store for device positioning
+                            isLeft: isLeft,
+                            sideIndex: side.length
                         };
 
+                        side.push(piaNode);
                         nodes.push(piaNode);
                         piaNodes[conn.region_id] = piaNode;
                     });
 
-                    // Position devices clustered near their exit nodes
-                    Object.keys(devicesByRegion).forEach(regionId => {
-                        const devices = devicesByRegion[regionId];
-                        const piaNode = piaNodes[regionId];
+                    // Position left PIA nodes
+                    leftPiaNodes.forEach((node, idx) => {
+                        node.x = 80;
+                        node.y = centerY + (idx - (leftPiaNodes.length - 1) / 2) * 100;
+                    });
 
+                    // Position right PIA nodes
+                    rightPiaNodes.forEach((node, idx) => {
+                        node.x = width - 80;
+                        node.y = centerY + (idx - (rightPiaNodes.length - 1) / 2) * 100;
+                    });
+
+                    // Position devices in a loose circle, biased toward their exit node side
+                    const allDevicesToPosition = [];
+
+                    // Devices with exit nodes - sort by which side their exit is on
+                    const leftSideDevices = [];
+                    const rightSideDevices = [];
+
+                    Object.keys(devicesByRegion).forEach(regionId => {
+                        const piaNode = piaNodes[regionId];
                         if (!piaNode) return;
 
-                        // Position devices in an arc near their PIA node
-                        const arcSpan = Math.PI / 4; // 45 degree arc
-                        devices.forEach((device, idx) => {
-                            const deviceCount = devices.length;
-                            const offset = (idx - (deviceCount - 1) / 2) * (arcSpan / Math.max(deviceCount, 1));
-                            const angle = piaNode.angle + offset;
-
-                            nodes.push({
-                                id: `device-${device.id}`,
-                                label: device.hostname,
-                                type: 'device',
-                                online: device.online,
-                                region_id: device.region_id,
-                                x: centerX + meshRadius * Math.cos(angle),
-                                y: centerY + meshRadius * Math.sin(angle)
-                            });
+                        devicesByRegion[regionId].forEach(device => {
+                            if (piaNode.isLeft) {
+                                leftSideDevices.push(device);
+                            } else {
+                                rightSideDevices.push(device);
+                            }
                         });
                     });
 
-                    // Position devices without exit regions in remaining space
+                    // Position left-side devices on the left half of the circle
+                    leftSideDevices.forEach((device, idx) => {
+                        // Left side: angles from 90° to 270° (bottom-left to top-left)
+                        const angle = Math.PI / 2 + (idx / Math.max(leftSideDevices.length - 1, 1)) * Math.PI;
+
+                        nodes.push({
+                            id: `device-${device.id}`,
+                            label: device.hostname,
+                            type: 'device',
+                            online: device.online,
+                            region_id: device.region_id,
+                            x: centerX + meshRadius * Math.cos(angle),
+                            y: centerY + meshRadius * Math.sin(angle)
+                        });
+                    });
+
+                    // Position right-side devices on the right half of the circle
+                    rightSideDevices.forEach((device, idx) => {
+                        // Right side: angles from -90° to 90° (bottom-right to top-right)
+                        const angle = -Math.PI / 2 + (idx / Math.max(rightSideDevices.length - 1, 1)) * Math.PI;
+
+                        nodes.push({
+                            id: `device-${device.id}`,
+                            label: device.hostname,
+                            type: 'device',
+                            online: device.online,
+                            region_id: device.region_id,
+                            x: centerX + meshRadius * Math.cos(angle),
+                            y: centerY + meshRadius * Math.sin(angle)
+                        });
+                    });
+
+                    // Position devices without exit regions spread across top and bottom
                     devicesWithoutRegion.forEach((device, idx) => {
-                        const angle = (idx / Math.max(devicesWithoutRegion.length, 1)) * 2 * Math.PI + Math.PI;
+                        const isTop = idx % 2 === 0;
+                        const offset = Math.floor(idx / 2);
+                        const angle = isTop ? -Math.PI / 6 + offset * Math.PI / 12 : Math.PI + Math.PI / 6 - offset * Math.PI / 12;
+
                         nodes.push({
                             id: `device-${device.id}`,
                             label: device.hostname,
