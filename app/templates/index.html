@@ -364,7 +364,7 @@
                     const links = [];
                     const centerX = width / 2;
                     const centerY = height / 2;
-                    const meshRadius = 120;  // Looser mesh
+                    const meshRadius = 140;  // Even looser mesh to avoid overlaps
 
                     // Group devices by their exit region
                     const devicesByRegion = {};
@@ -420,10 +420,7 @@
                         node.y = centerY + (idx - (rightPiaNodes.length - 1) / 2) * 100;
                     });
 
-                    // Position devices in a loose circle, biased toward their exit node side
-                    const allDevicesToPosition = [];
-
-                    // Devices with exit nodes - sort by which side their exit is on
+                    // Collect all devices with their side assignment
                     const leftSideDevices = [];
                     const rightSideDevices = [];
 
@@ -440,10 +437,17 @@
                         });
                     });
 
-                    // Position left-side devices on the left half of the circle
+                    // Position left-side devices evenly on the left semicircle
                     leftSideDevices.forEach((device, idx) => {
-                        // Left side: angles from 90° to 270° (bottom-left to top-left)
-                        const angle = Math.PI / 2 + (idx / Math.max(leftSideDevices.length - 1, 1)) * Math.PI;
+                        // Left side: angles from 45° to 315° (wider range for better spacing)
+                        const startAngle = Math.PI / 4;  // 45°
+                        const endAngle = Math.PI * 7 / 4;  // 315°
+                        const totalAngle = endAngle - startAngle;
+
+                        // Distribute evenly
+                        const angle = leftSideDevices.length === 1
+                            ? Math.PI  // 180° if only one device
+                            : startAngle + (idx / (leftSideDevices.length - 1)) * totalAngle;
 
                         nodes.push({
                             id: `device-${device.id}`,
@@ -456,10 +460,17 @@
                         });
                     });
 
-                    // Position right-side devices on the right half of the circle
+                    // Position right-side devices evenly on the right semicircle
                     rightSideDevices.forEach((device, idx) => {
-                        // Right side: angles from -90° to 90° (bottom-right to top-right)
-                        const angle = -Math.PI / 2 + (idx / Math.max(rightSideDevices.length - 1, 1)) * Math.PI;
+                        // Right side: angles from -135° to 135° (270° total range)
+                        const startAngle = -Math.PI * 3 / 4;  // -135°
+                        const endAngle = Math.PI * 3 / 4;  // 135°
+                        const totalAngle = endAngle - startAngle;
+
+                        // Distribute evenly
+                        const angle = rightSideDevices.length === 1
+                            ? 0  // 0° if only one device
+                            : startAngle + (idx / (rightSideDevices.length - 1)) * totalAngle;
 
                         nodes.push({
                             id: `device-${device.id}`,
@@ -472,21 +483,41 @@
                         });
                     });
 
-                    // Position devices without exit regions spread across top and bottom
+                    // Position devices without exit regions at top and bottom with proper spacing
                     devicesWithoutRegion.forEach((device, idx) => {
+                        // Alternate top and bottom
                         const isTop = idx % 2 === 0;
-                        const offset = Math.floor(idx / 2);
-                        const angle = isTop ? -Math.PI / 6 + offset * Math.PI / 12 : Math.PI + Math.PI / 6 - offset * Math.PI / 12;
+                        const sideCount = Math.ceil(devicesWithoutRegion.length / 2);
+                        const sideIdx = Math.floor(idx / 2);
 
-                        nodes.push({
-                            id: `device-${device.id}`,
-                            label: device.hostname,
-                            type: 'device',
-                            online: device.online,
-                            region_id: device.region_id,
-                            x: centerX + meshRadius * Math.cos(angle),
-                            y: centerY + meshRadius * Math.sin(angle)
-                        });
+                        // Top: -45° to 45° range, Bottom: 135° to 225° range
+                        if (isTop) {
+                            const angle = sideCount === 1
+                                ? -Math.PI / 2  // -90° (top center)
+                                : -Math.PI / 4 + (sideIdx / (sideCount - 1)) * Math.PI / 2;
+                            nodes.push({
+                                id: `device-${device.id}`,
+                                label: device.hostname,
+                                type: 'device',
+                                online: device.online,
+                                region_id: device.region_id,
+                                x: centerX + meshRadius * Math.cos(angle),
+                                y: centerY + meshRadius * Math.sin(angle)
+                            });
+                        } else {
+                            const angle = sideCount === 1
+                                ? Math.PI / 2  // 90° (bottom center)
+                                : Math.PI * 3 / 4 + (sideIdx / (sideCount - 1)) * Math.PI / 2;
+                            nodes.push({
+                                id: `device-${device.id}`,
+                                label: device.hostname,
+                                type: 'device',
+                                online: device.online,
+                                region_id: device.region_id,
+                                x: centerX + meshRadius * Math.cos(angle),
+                                y: centerY + meshRadius * Math.sin(angle)
+                            });
+                        }
                     });
 
                     // Create mesh connections between all devices
