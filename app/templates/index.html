@@ -351,32 +351,23 @@
                     const linkGroup = svg.append('g').attr('class', 'links');
                     const nodeGroup = svg.append('g').attr('class', 'nodes');
 
-                    // Create force simulation with reduced forces for stability
-                    const simulation = d3.forceSimulation()
-                        .force('link', d3.forceLink().id(d => d.id).distance(d => d.type === 'mesh' ? 80 : 150))
-                        .force('charge', d3.forceManyBody().strength(-150))  // Reduced from -300
-                        .force('center', d3.forceCenter(width / 2, height / 2))
-                        .force('collision', d3.forceCollide().radius(40))
-                        .alphaDecay(0.05);  // Faster settling
-
-                    this.networkGraph = { svg, linkGroup, nodeGroup, width, height, simulation };
+                    this.networkGraph = { svg, linkGroup, nodeGroup, width, height };
                 },
 
                 updateNetworkGraph() {
                     if (!this.networkGraph) return;
 
-                    const { svg, linkGroup, nodeGroup, width, height, simulation } = this.networkGraph;
+                    const { svg, linkGroup, nodeGroup, width, height } = this.networkGraph;
 
-                    // Build graph data
+                    // Build graph data with FIXED positions
                     const nodes = [];
                     const links = [];
 
-                    // Add all Tailscale device nodes (will form a mesh in center)
-                    // Initialize devices in a circle pattern in the center
+                    // Add all Tailscale device nodes in a fixed circle in the center
                     const deviceCount = this.devices.length;
                     const centerX = width / 2;
                     const centerY = height / 2;
-                    const meshRadius = 80;
+                    const meshRadius = 100;
 
                     this.devices.forEach((device, idx) => {
                         const angle = (idx / deviceCount) * 2 * Math.PI;
@@ -395,8 +386,8 @@
                     for (let i = 0; i < nodes.length; i++) {
                         for (let j = i + 1; j < nodes.length; j++) {
                             links.push({
-                                source: nodes[i].id,
-                                target: nodes[j].id,
+                                source: nodes[i],
+                                target: nodes[j],
                                 type: 'mesh'
                             });
                         }
@@ -411,45 +402,52 @@
                         const isLeft = idx % 2 === 0;
                         const sideIndex = Math.floor(idx / 2);
 
-                        const x = isLeft ? 50 : width - 50;
+                        const x = isLeft ? 80 : width - 80;
                         const y = height / 2 + (sideIndex - Math.floor(piaCount / 4)) * 100;
 
-                        nodes.push({
+                        const piaNode = {
                             id: nodeId,
                             label: conn.region_name,
                             type: 'pia',
                             region_id: conn.region_id,
                             x: x,
-                            y: y,
-                            fx: x,  // Fixed X position
-                            fy: y   // Fixed Y position
-                        });
-                    });
+                            y: y
+                        };
 
-                    // Add connections from devices to their assigned PIA regions
-                    this.devices.forEach(device => {
-                        if (device.region_id) {
-                            links.push({
-                                source: `device-${device.id}`,
-                                target: `pia-${device.region_id}`,
-                                type: 'exit'
-                            });
-                        }
+                        nodes.push(piaNode);
+
+                        // Add connections from devices to this PIA region
+                        this.devices.forEach(device => {
+                            if (device.region_id === conn.region_id) {
+                                const deviceNode = nodes.find(n => n.id === `device-${device.id}`);
+                                if (deviceNode) {
+                                    links.push({
+                                        source: deviceNode,
+                                        target: piaNode,
+                                        type: 'exit'
+                                    });
+                                }
+                            }
+                        });
                     });
 
                     // Update links
                     const link = linkGroup.selectAll('line')
-                        .data(links, d => `${d.source}-${d.target}`);
+                        .data(links, d => `${d.source.id}-${d.target.id}`);
 
                     link.exit().remove();
 
                     const linkEnter = link.enter()
                         .append('line')
-                        .attr('stroke', d => d.type === 'mesh' ? '#4b5563' : '#3b82f6')
-                        .attr('stroke-width', d => d.type === 'mesh' ? 1 : 2)
-                        .attr('stroke-opacity', d => d.type === 'mesh' ? 0.3 : 0.8);
+                        .attr('stroke', d => d.type === 'mesh' ? '#6b7280' : '#3b82f6')
+                        .attr('stroke-width', d => d.type === 'mesh' ? 1.5 : 2.5)
+                        .attr('stroke-opacity', d => d.type === 'mesh' ? 0.6 : 0.9);
 
-                    const allLinks = linkEnter.merge(link);
+                    linkEnter.merge(link)
+                        .attr('x1', d => d.source.x)
+                        .attr('y1', d => d.source.y)
+                        .attr('x2', d => d.target.x)
+                        .attr('y2', d => d.target.y);
 
                     // Update nodes
                     const node = nodeGroup.selectAll('g')
@@ -459,11 +457,7 @@
 
                     const nodeEnter = node.enter()
                         .append('g')
-                        .attr('class', 'network-node')
-                        .call(d3.drag()
-                            .on('start', dragstarted)
-                            .on('drag', dragged)
-                            .on('end', dragended));
+                        .attr('class', 'network-node');
 
                     nodeEnter.append('circle')
                         .attr('r', d => d.type === 'pia' ? 25 : 20);
@@ -476,6 +470,9 @@
 
                     const allNodes = nodeEnter.merge(node);
 
+                    allNodes
+                        .attr('transform', d => `translate(${d.x},${d.y})`);
+
                     allNodes.select('circle')
                         .attr('fill', d => {
                             if (d.type === 'pia') return '#22c55e';
@@ -486,53 +483,6 @@
 
                     allNodes.select('text')
                         .text(d => d.label);
-
-                    // Update simulation
-                    simulation
-                        .nodes(nodes)
-                        .on('tick', ticked);
-
-                    simulation.force('link')
-                        .links(links);
-
-                    // Restart simulation with limited iterations
-                    simulation.alpha(0.3).restart();
-
-                    // Stop simulation after it settles to prevent constant jitter
-                    setTimeout(() => {
-                        simulation.stop();
-                    }, 3000);  // Stop after 3 seconds
-
-                    function ticked() {
-                        allLinks
-                            .attr('x1', d => d.source.x)
-                            .attr('y1', d => d.source.y)
-                            .attr('x2', d => d.target.x)
-                            .attr('y2', d => d.target.y);
-
-                        allNodes
-                            .attr('transform', d => `translate(${d.x},${d.y})`);
-                    }
-
-                    function dragstarted(event, d) {
-                        if (!event.active) simulation.alphaTarget(0.3).restart();
-                        d.fx = d.x;
-                        d.fy = d.y;
-                    }
-
-                    function dragged(event, d) {
-                        d.fx = event.x;
-                        d.fy = event.y;
-                    }
-
-                    function dragended(event, d) {
-                        if (!event.active) simulation.alphaTarget(0);
-                        // Don't release PIA nodes, they should stay fixed
-                        if (d.type !== 'pia') {
-                            d.fx = null;
-                            d.fy = null;
-                        }
-                    }
                 },
 
                 updateCharts() {
