@@ -25,7 +25,7 @@ class PIAService:
         # NOTE: SSL verification disabled due to Python 3.13.5 + OpenSSL 3.5.1 compatibility issue
         # This is acceptable for homelab use with known PIA servers
         # Bind to container's eth0 IP to ensure traffic doesn't go through VPN interfaces
-        transport = httpx.AsyncHTTPTransport(local_address="10.36.0.102")
+        transport = httpx.AsyncHTTPTransport(local_address="10.36.0.102", verify=False)
         self.client = httpx.AsyncClient(timeout=30.0, verify=False, transport=transport)
 
     async def close(self):
