@@ -405,10 +405,36 @@
                         node.y = centerY + (idx - (rightPiaNodes.length - 1) / 2) * 100;
                     });
 
-                    // Position ALL devices evenly in a RING (circle)
-                    const deviceCount = this.devices.length;
-                    this.devices.forEach((device, idx) => {
-                        // Distribute evenly around full 360° circle
+                    // Order devices intelligently: group by exit node side to minimize crossings
+                    const leftSideDevices = [];
+                    const rightSideDevices = [];
+                    const unroutedDevices = [];
+
+                    this.devices.forEach(device => {
+                        if (device.region_id && piaNodes[device.region_id]) {
+                            const piaNode = piaNodes[device.region_id];
+                            if (piaNode.isLeft) {
+                                leftSideDevices.push(device);
+                            } else {
+                                rightSideDevices.push(device);
+                            }
+                        } else {
+                            unroutedDevices.push(device);
+                        }
+                    });
+
+                    // Create ordered device list: left-exit, unrouted, right-exit
+                    // This ordering minimizes crossings while maintaining ring
+                    const orderedDevices = [
+                        ...leftSideDevices,
+                        ...unroutedDevices,
+                        ...rightSideDevices
+                    ];
+
+                    // Position ALL devices evenly in a RING around full 360°
+                    const deviceCount = orderedDevices.length;
+                    orderedDevices.forEach((device, idx) => {
+                        // Distribute evenly around full circle
                         const angle = (idx / deviceCount) * 2 * Math.PI - Math.PI / 2; // Start at top
 
                         nodes.push({
