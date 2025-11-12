@@ -17,6 +17,7 @@
         .network-link {
             stroke: #3b82f6;
             stroke-width: 2px;
+            fill: none;
             marker-end: url(#arrowhead);
         }
         .network-node {
@@ -315,9 +316,17 @@
                 },
 
                 initNetworkGraph() {
+                    // Prevent duplicate initialization
+                    if (this.networkGraph) return;
+
                     const container = document.getElementById('network-graph');
+                    if (!container) return;
+
                     const width = container.clientWidth;
                     const height = 400;
+
+                    // Clear any existing SVG first
+                    d3.select('#network-graph').selectAll('svg').remove();
 
                     // Create SVG
                     const svg = d3.select('#network-graph')
@@ -404,31 +413,38 @@
                         });
                     });
 
-                    // Update links
-                    const link = linkGroup.selectAll('line')
+                    // Update links with curved paths
+                    const link = linkGroup.selectAll('path')
                         .data(links, d => `${d.source}-${d.target}`);
 
                     link.exit().remove();
 
                     link.enter()
-                        .append('line')
+                        .append('path')
                         .attr('class', 'network-link')
+                        .attr('fill', 'none')
                         .merge(link)
-                        .attr('x1', d => {
+                        .attr('d', d => {
                             const sourceNode = nodes.find(n => n.id === d.source);
-                            return sourceNode ? sourceNode.x : 0;
-                        })
-                        .attr('y1', d => {
-                            const sourceNode = nodes.find(n => n.id === d.source);
-                            return sourceNode ? sourceNode.y : 0;
-                        })
-                        .attr('x2', d => {
                             const targetNode = nodes.find(n => n.id === d.target);
-                            return targetNode ? targetNode.x : 0;
-                        })
-                        .attr('y2', d => {
-                            const targetNode = nodes.find(n => n.id === d.target);
-                            return targetNode ? targetNode.y : 0;
+
+                            if (!sourceNode || !targetNode) return '';
+
+                            const x1 = sourceNode.x;
+                            const y1 = sourceNode.y;
+                            const x2 = targetNode.x;
+                            const y2 = targetNode.y;
+
+                            // Calculate control point for smooth curve
+                            const dx = x2 - x1;
+                            const dy = y2 - y1;
+
+                            // Control point offset (creates the curve)
+                            const cx = x1 + dx * 0.5;
+                            const cy = y1 + dy * 0.5;
+
+                            // Create smooth quadratic bezier curve
+                            return `M ${x1},${y1} Q ${cx},${cy} ${x2},${y2}`;
                         });
 
                     // Update nodes
