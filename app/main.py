@@ -43,6 +43,25 @@ async def restore_routing_rules() -> int:
     restored = 0
 
     try:
+        # Ensure container traffic always uses main table (not VPN)
+        import subprocess
+        result = subprocess.run(
+            ["ip", "rule", "list"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+
+        # Check if container routing rule exists
+        if "from 10.36.0.102 lookup main" not in result.stdout:
+            subprocess.run(
+                ["ip", "rule", "add", "from", "10.36.0.102", "table", "main", "priority", "100"],
+                check=True,
+                capture_output=True
+            )
+            logger.info("Added container routing rule to prevent VPN interference")
+
+
         # Get all routing configurations
         routing_configs = await DeviceRoutingDB.get_all()
 
