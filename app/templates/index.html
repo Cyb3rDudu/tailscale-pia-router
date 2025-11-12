@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tailscale PIA Router</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>PIA Router</title>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
@@ -44,45 +46,45 @@
     <div class="min-h-screen">
         <!-- Header -->
         <header class="bg-white dark:bg-gray-800 shadow">
-            <div class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Tailscale PIA Router</h1>
-                    <div class="flex items-center space-x-6">
+            <div class="max-w-7xl mx-auto px-4 py-4 sm:py-6 sm:px-6 lg:px-8">
+                <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-3 sm:space-y-0">
+                    <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">PIA Router</h1>
+                    <div class="flex items-center justify-between sm:justify-end space-x-3 sm:space-x-6">
                         <!-- Compact Status Indicators -->
                         <div class="flex items-center space-x-2">
                             <div :class="vpnStatus.active_count > 0 ? 'bg-green-500' : 'bg-gray-500'" class="w-2.5 h-2.5 rounded-full"></div>
-                            <span class="text-sm text-gray-700 dark:text-gray-300">
-                                <span x-text="vpnStatus.active_count"></span> VPN
+                            <span class="text-xs sm:text-sm text-gray-700 dark:text-gray-300">
+                                <span x-text="vpnStatus.active_count"></span> <span class="hidden sm:inline">VPN</span>
                             </span>
                         </div>
                         <div class="flex items-center space-x-2">
                             <div :class="tailscaleStatus.running ? 'bg-green-500' : 'bg-red-500'" class="w-2.5 h-2.5 rounded-full"></div>
-                            <span class="text-sm text-gray-700 dark:text-gray-300">Tailscale</span>
+                            <span class="text-xs sm:text-sm text-gray-700 dark:text-gray-300"><span class="hidden sm:inline">Tailscale</span><span class="sm:hidden">TS</span></span>
                         </div>
                         <div class="flex items-center space-x-2">
                             <div :class="systemHealth.healthy ? 'bg-green-500' : 'bg-yellow-500'" class="w-2.5 h-2.5 rounded-full"></div>
-                            <span class="text-sm text-gray-700 dark:text-gray-300">System</span>
+                            <span class="text-xs sm:text-sm text-gray-700 dark:text-gray-300"><span class="hidden sm:inline">System</span><span class="sm:hidden">Sys</span></span>
                         </div>
-                        <a href="/settings" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm">Settings</a>
+                        <a href="/settings" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs sm:text-sm font-medium">Settings</a>
                     </div>
                 </div>
             </div>
         </header>
 
-        <main class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <main class="max-w-7xl mx-auto px-4 py-4 sm:py-6 sm:px-6 lg:px-8">
             <!-- VPN Connection Cards Grid -->
             <div x-show="vpnStatus.connections && vpnStatus.connections.length > 0">
-                <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">VPN Connections</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-6">
+                <h2 class="text-lg sm:text-xl font-semibold text-gray-900 dark:text-white mb-3 sm:mb-4">VPN Connections</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-4 sm:mb-6">
                     <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
-                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 sm:p-6">
                             <!-- Connection Header -->
-                            <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center justify-between mb-3 sm:mb-4">
                                 <div>
-                                    <h3 class="text-lg font-semibold text-gray-900 dark:text-white" x-text="conn.region_name"></h3>
+                                    <h3 class="text-base sm:text-lg font-semibold text-gray-900 dark:text-white" x-text="conn.region_name"></h3>
                                     <p class="text-xs text-gray-500 dark:text-gray-400" x-text="conn.interface"></p>
                                 </div>
-                                <div class="bg-green-500 w-3 h-3 rounded-full"></div>
+                                <div class="bg-green-500 w-3 h-3 rounded-full flex-shrink-0"></div>
                             </div>
 
                             <!-- Stats -->
@@ -110,9 +112,9 @@
                             </div>
 
                             <!-- Throughput Chart -->
-                            <div class="mt-4">
+                            <div class="mt-3 sm:mt-4">
                                 <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">Throughput (last 2 minutes)</div>
-                                <div :id="'chart-' + conn.interface" style="height: 150px;"></div>
+                                <div :id="'chart-' + conn.interface" class="touch-pan-y" style="height: 120px; min-height: 120px;"></div>
                             </div>
 
                             <!-- Devices using this connection -->
@@ -132,16 +134,54 @@
                 </div>
             </div>
 
-            <!-- Network Topology Mesh -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+            <!-- Network Topology Mesh - Hide on mobile -->
+            <div class="hidden md:block bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Network Topology</h2>
                 <div id="network-graph" class="w-full bg-gray-100 dark:bg-gray-700 rounded" style="height: 400px;"></div>
             </div>
 
             <!-- Device List -->
-            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 sm:p-6">
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-4">Tailscale Devices</h2>
-                <div class="overflow-visible">
+
+                <!-- Mobile Card Layout -->
+                <div class="md:hidden space-y-4">
+                    <template x-for="device in devices" :key="device.id">
+                        <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 space-y-3">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h3 class="text-sm font-medium text-gray-900 dark:text-white" x-text="device.hostname"></h3>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1" x-text="device.ip_addresses.join(', ')"></p>
+                                </div>
+                                <span :class="device.online ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-300'" class="px-2 py-1 text-xs rounded-full" x-text="device.online ? 'Online' : 'Offline'"></span>
+                            </div>
+                            <div class="text-xs text-gray-600 dark:text-gray-400">
+                                <span class="font-medium">OS:</span> <span x-text="device.os || 'Unknown'"></span>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">VPN Region</label>
+                                <select
+                                    @change="setDeviceRegion(device.id, $event.target.value)"
+                                    class="w-full text-sm py-2 px-3 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 touch-manipulation">
+                                    <option value="">-- No VPN --</option>
+                                    <template x-for="region in regions" :key="region.id">
+                                        <option :value="region.id" :selected="device.region_id === region.id" x-text="`${region.name} (${region.country})`"></option>
+                                    </template>
+                                </select>
+                                <div x-show="device.region_id" class="mt-1 text-xs" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'">
+                                    <span x-text="device.routing_enabled ? '✓ Routing enabled' : '⏳ Connecting...'"></span>
+                                    <span x-show="device.auto_managed" class="ml-1 text-gray-500 dark:text-gray-400">(Set exit node in app)</span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="devices.length === 0" class="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
+                        No devices found
+                    </div>
+                </div>
+
+                <!-- Desktop Table Layout -->
+                <div class="hidden md:block overflow-visible">
                     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                         <thead class="bg-gray-50 dark:bg-gray-700">
                             <tr>
@@ -170,7 +210,7 @@
                                     <td class="px-6 py-4">
                                         <select
                                             @change="setDeviceRegion(device.id, $event.target.value)"
-                                            class="text-sm rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                                            class="text-sm py-2 px-3 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 touch-manipulation">
                                             <option value="">-- No VPN --</option>
                                             <template x-for="region in regions" :key="region.id">
                                                 <option :value="region.id" :selected="device.region_id === region.id" x-text="`${region.name} (${region.country})`"></option>
@@ -723,9 +763,12 @@
                         if (!globalCharts[conn.interface]) {
                             // uPlot options
                             const isDark = document.documentElement.classList.contains('dark');
+                            // Responsive chart sizing
+                            const chartWidth = Math.max(chartDiv.clientWidth, 280);
+                            const chartHeight = window.innerWidth < 768 ? 120 : 150;
                             const opts = {
-                                width: chartDiv.clientWidth,
-                                height: 150,
+                                width: chartWidth,
+                                height: chartHeight,
                                 padding: [10, 10, 10, 0],  // top, right, bottom, left - no left padding (handled by axis size)
                                 series: [
                                     {
