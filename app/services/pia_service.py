@@ -421,6 +421,69 @@ method=disabled
             logger.error(f"Failed to configure WireGuard in NetworkManager: {e}")
             raise
 
+    def _add_server_bypass_rule(self, server_ip: str) -> bool:
+        """Add routing rule to bypass VPN for traffic to PIA server itself.
+
+        This prevents a routing loop where WireGuard traffic to the PIA server
+        would be routed through the VPN tunnel, breaking the handshake.
+
+        Args:
+            server_ip: PIA server IP address
+
+        Returns:
+            True if rule added successfully
+        """
+        try:
+            # Check if rule already exists
+            result = subprocess.run(
+                ["ip", "rule", "list"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            if f"to {server_ip} lookup main" in result.stdout:
+                logger.debug(f"Bypass rule for {server_ip} already exists")
+                return True
+
+            # Find the lowest available priority between 50-99
+            # We use this range to ensure these rules take precedence over VPN routing
+            used_priorities = []
+            for line in result.stdout.split('\n'):
+                if 'lookup main' in line and 'to ' in line:
+                    parts = line.split(':')
+                    if parts:
+                        try:
+                            priority = int(parts[0])
+                            if 50 <= priority <= 99:
+                                used_priorities.append(priority)
+                        except ValueError:
+                            pass
+
+            # Find first available priority
+            priority = 50
+            while priority in used_priorities and priority < 100:
+                priority += 1
+
+            if priority >= 100:
+                logger.warning("No available priority slots for bypass rules (50-99 full)")
+                priority = 50  # Reuse, will update existing rule
+
+            # Add routing rule to bypass VPN for this server
+            subprocess.run(
+                ["ip", "rule", "add", "to", server_ip, "lookup", "main", "priority", str(priority)],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            logger.info(f"Added routing bypass rule for PIA server {server_ip} at priority {priority}")
+            return True
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to add bypass rule for {server_ip}: {e.stderr}")
+            return False
+
     async def connect_region(self, region_id: str) -> bool:
         """Connect to PIA VPN for a specific region via NetworkManager.
 
@@ -449,6 +512,29 @@ method=disabled
             )
 
             logger.info(f"PIA VPN connected to {region_id} via NetworkManager: {result.stdout}")
+
+            # Get server IP from WireGuard interface to add bypass rule
+            try:
+                wg_show = subprocess.run(
+                    ["wg", "show", interface_name, "endpoints"],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+
+                # Parse output: "peer_key   ip:port"
+                for line in wg_show.stdout.strip().split('\n'):
+                    if line and '\t' in line:
+                        endpoint = line.split('\t')[1].strip()
+                        if ':' in endpoint:
+                            server_ip = endpoint.split(':')[0]
+                            # Add routing bypass rule for this server
+                            self._add_server_bypass_rule(server_ip)
+                            break
+
+            except Exception as e:
+                logger.warning(f"Could not add bypass rule for {region_id}: {e}")
+
             return True
 
         except subprocess.CalledProcessError as e:
