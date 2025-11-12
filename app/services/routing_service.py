@@ -10,6 +10,7 @@ TAILSCALE_INTERFACE = "tailscale0"
 PIA_INTERFACE = "pia"
 PIA_INTERFACE_PREFIX = "pia-"
 BASE_ROUTING_TABLE = 100  # Start routing tables from 100
+PIA_DNS_SERVERS = ["10.0.0.243", "10.0.0.242"]  # PIA DNS servers
 
 
 class RoutingService:
@@ -242,6 +243,9 @@ class RoutingService:
             # Add FORWARD rules for this PIA interface if not already present
             await self.ensure_forward_rules(pia_interface)
 
+            # Ensure DNS interception rules to prevent DNS leaks
+            await self.ensure_dns_interception()
+
             self.enabled_devices.add(device_ip)
             logger.info(f"Successfully enabled routing for device {device_ip} via {pia_interface}")
             return True
@@ -365,6 +369,55 @@ class RoutingService:
 
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to ensure forward rules for {pia_interface}: {e}")
+            return False
+
+    async def ensure_dns_interception(self) -> bool:
+        """Ensure DNS interception rules exist to prevent DNS leaks.
+
+        Intercepts all DNS queries (port 53) arriving on Tailscale interface
+        and redirects them to PIA's DNS servers, ensuring they go through the VPN tunnel.
+        This prevents DNS queries from leaking to local DNS (10.36.0.101) in plaintext.
+
+        Returns:
+            True if successful
+        """
+        try:
+            for proto in ["udp", "tcp"]:
+                for dns_server in PIA_DNS_SERVERS:
+                    # Check if DNS intercept rule exists
+                    result = subprocess.run(
+                        [
+                            "iptables", "-t", "nat", "-C", "PREROUTING",
+                            "-i", TAILSCALE_INTERFACE,
+                            "-p", proto, "--dport", "53",
+                            "-j", "DNAT", "--to-destination", f"{dns_server}:53"
+                        ],
+                        capture_output=True,
+                        check=False
+                    )
+
+                    if result.returncode != 0:
+                        # Rule doesn't exist, add it
+                        subprocess.run(
+                            [
+                                "iptables", "-t", "nat", "-I", "PREROUTING",
+                                "-i", TAILSCALE_INTERFACE,
+                                "-p", proto, "--dport", "53",
+                                "-j", "DNAT", "--to-destination", f"{dns_server}:53"
+                            ],
+                            check=True,
+                            capture_output=True
+                        )
+                        logger.info(f"Added DNS interception rule: {proto.upper()} queries -> {dns_server}")
+
+                    # Only use first DNS server for interception
+                    break
+
+            logger.info("DNS interception rules ensured (prevents DNS leaks)")
+            return True
+
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to ensure DNS interception: {e}")
             return False
 
     async def clear_device_rules(self) -> bool:
