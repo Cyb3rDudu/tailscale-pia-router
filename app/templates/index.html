@@ -29,6 +29,12 @@
         .network-node text {
             font-size: 12px;
             pointer-events: none;
+            fill: #1f2937;
+        }
+        @media (prefers-color-scheme: dark) {
+            .network-node text {
+                fill: #f9fafb;
+            }
         }
     </style>
 </head>
@@ -110,7 +116,9 @@
                             <!-- Throughput Chart -->
                             <div class="mt-4">
                                 <div class="text-xs text-gray-500 dark:text-gray-400 mb-2">Throughput (last 2 minutes)</div>
-                                <canvas :id="'chart-' + conn.interface" class="w-full" style="height: 150px;"></canvas>
+                                <div style="height: 150px; position: relative;">
+                                    <canvas :id="'chart-' + conn.interface" style="position: absolute; width: 100%; height: 100%;"></canvas>
+                                </div>
                             </div>
 
                             <!-- Devices using this connection -->
