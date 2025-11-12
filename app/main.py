@@ -1,6 +1,7 @@
 """Main FastAPI application for Tailscale PIA Router."""
 
 import logging
+import json
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -10,9 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.models import init_database, SettingsDB
+from app.models import init_database, SettingsDB, TailscaleDevicesDB, DeviceRoutingDB, PIARegionsDB
 from app.routers import settings, devices, status
-from app.services import get_tailscale_service
+from app.services import get_tailscale_service, get_pia_service, get_routing_service
 
 # Configure logging
 logging.basicConfig(
@@ -31,6 +32,89 @@ STATIC_DIR.mkdir(exist_ok=True)
 
 # Templates
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+async def restore_routing_rules() -> int:
+    """Restore routing rules for all enabled devices on startup.
+
+    Returns:
+        Number of devices restored
+    """
+    restored = 0
+
+    try:
+        # Get all routing configurations
+        routing_configs = await DeviceRoutingDB.get_all()
+
+        # Get PIA credentials
+        pia_credentials = await SettingsDB.get_json("pia_credentials")
+        if not pia_credentials:
+            logger.warning("PIA credentials not configured, skipping routing restoration")
+            return 0
+
+        # Get services
+        pia_service = get_pia_service()
+        routing_service = get_routing_service()
+
+        # Restore routing for each enabled device
+        for config in routing_configs:
+            if not config.get("enabled") or not config.get("region_id"):
+                continue
+
+            device_id = config["device_id"]
+            region_id = config["region_id"]
+
+            # Get device info
+            device = await TailscaleDevicesDB.get_by_id(device_id)
+            if not device:
+                logger.warning(f"Device {device_id} not found, skipping")
+                continue
+
+            # Parse IP addresses
+            ip_addresses = json.loads(device["ip_addresses"])
+            if not ip_addresses:
+                logger.warning(f"Device {device['hostname']} has no IP addresses, skipping")
+                continue
+
+            device_ip = ip_addresses[0]
+
+            # Get region info
+            region = await PIARegionsDB.get_by_id(region_id)
+            if not region:
+                logger.warning(f"Region {region_id} not found for device {device['hostname']}, skipping")
+                continue
+
+            try:
+                # Ensure VPN connection
+                success = await pia_service.ensure_region_connection(
+                    region_id=region_id,
+                    region_data=region,
+                    username=pia_credentials["username"],
+                    password=pia_credentials["password"]
+                )
+
+                if not success:
+                    logger.error(f"Failed to connect to region {region['name']} for device {device['hostname']}")
+                    continue
+
+                # Enable routing
+                pia_interface = pia_service._get_interface_name(region_id)
+                success = await routing_service.enable_device_routing(device_ip, pia_interface)
+
+                if success:
+                    logger.info(f"Restored routing for {device['hostname']} ({device_ip}) -> {region['name']}")
+                    restored += 1
+                else:
+                    logger.error(f"Failed to enable routing for device {device['hostname']}")
+
+            except Exception as e:
+                logger.error(f"Failed to restore routing for device {device['hostname']}: {e}")
+                continue
+
+    except Exception as e:
+        logger.error(f"Error in restore_routing_rules: {e}")
+
+    return restored
 
 
 @asynccontextmanager
@@ -55,6 +139,14 @@ async def lifespan(app: FastAPI):
             logger.info("Tailscale API key loaded")
     except Exception as e:
         logger.error(f"Failed to load Tailscale API key: {e}")
+
+    # Restore routing rules for enabled devices
+    try:
+        logger.info("Restoring routing rules for enabled devices...")
+        restored_count = await restore_routing_rules()
+        logger.info(f"Restored routing for {restored_count} devices")
+    except Exception as e:
+        logger.error(f"Failed to restore routing rules: {e}")
 
     logger.info("Application startup complete")
 
