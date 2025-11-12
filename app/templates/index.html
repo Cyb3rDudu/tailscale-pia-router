@@ -524,22 +524,40 @@
                         const rxBytes = conn.transfer_rx_bytes || 0;
                         const txBytes = conn.transfer_tx_bytes || 0;
 
-                        // Validate time delta to prevent magnitude errors
+                        // Calculate rates (validate time delta to prevent magnitude errors)
                         let rawRxRate = 0;
                         let rawTxRate = 0;
 
-                        if (timeDelta > 0.5 && timeDelta < 10) { // Reasonable time window (0.5s to 10s)
+                        if (timeDelta > 0.1 && timeDelta < 30) { // Reasonable time window (0.1s to 30s)
                             const rxDelta = rxBytes - history.prevRx;
                             const txDelta = txBytes - history.prevTx;
+
+                            // Debug logging for Singapore
+                            if (conn.interface === 'pia-sg') {
+                                console.log(`[${conn.interface}] RX: ${rxBytes} (prev: ${history.prevRx}, delta: ${rxDelta}), Time: ${timeDelta.toFixed(2)}s`);
+                            }
 
                             // Calculate instantaneous rate
                             rawRxRate = rxDelta / timeDelta;
                             rawTxRate = txDelta / timeDelta;
 
+                            // More debug logging
+                            if (conn.interface === 'pia-sg') {
+                                console.log(`[${conn.interface}] Calculated rate: ${(rawRxRate / 1024 / 1024).toFixed(2)} MB/s`);
+                            }
+
                             // Sanity check: if rate exceeds 1 Gbps, something is wrong
                             const maxRate = 1024 * 1024 * 1024 / 8; // 1 Gbps in bytes/sec
-                            if (rawRxRate > maxRate) rawRxRate = 0;
-                            if (rawTxRate > maxRate) rawTxRate = 0;
+                            if (rawRxRate > maxRate) {
+                                console.warn(`Rate ${rawRxRate} exceeds 1 Gbps limit for ${conn.interface}`);
+                                rawRxRate = 0;
+                            }
+                            if (rawTxRate > maxRate) {
+                                console.warn(`Rate ${rawTxRate} exceeds 1 Gbps limit for ${conn.interface}`);
+                                rawTxRate = 0;
+                            }
+                        } else {
+                            console.warn(`Invalid timeDelta ${timeDelta} for ${conn.interface}, skipping rate calculation`);
                         }
 
                         history.prevRx = rxBytes;
@@ -556,8 +574,8 @@
                             history.rawTx.shift();
                         }
 
-                        // Calculate simple moving average over last 20 samples for very smooth lines
-                        const windowSize = Math.min(20, history.rawRx.length);
+                        // Calculate simple moving average over last 10 samples for smooth but responsive lines
+                        const windowSize = Math.min(10, history.rawRx.length);
                         const recentRx = history.rawRx.slice(-windowSize);
                         const recentTx = history.rawTx.slice(-windowSize);
 
