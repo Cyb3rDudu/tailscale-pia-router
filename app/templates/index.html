@@ -359,18 +359,82 @@
 
                     const { svg, linkGroup, nodeGroup, width, height } = this.networkGraph;
 
-                    // Build graph data with FIXED positions
+                    // Build graph data with FIXED positions, clustered by exit node
                     const nodes = [];
                     const links = [];
-
-                    // Add all Tailscale device nodes in a fixed circle in the center
-                    const deviceCount = this.devices.length;
                     const centerX = width / 2;
                     const centerY = height / 2;
                     const meshRadius = 100;
+                    const piaRadius = Math.min(width, height) * 0.4;
 
-                    this.devices.forEach((device, idx) => {
-                        const angle = (idx / deviceCount) * 2 * Math.PI;
+                    // Group devices by their exit region
+                    const devicesByRegion = {};
+                    const devicesWithoutRegion = [];
+
+                    this.devices.forEach(device => {
+                        if (device.region_id) {
+                            if (!devicesByRegion[device.region_id]) {
+                                devicesByRegion[device.region_id] = [];
+                            }
+                            devicesByRegion[device.region_id].push(device);
+                        } else {
+                            devicesWithoutRegion.push(device);
+                        }
+                    });
+
+                    // Position PIA exit nodes evenly around the perimeter
+                    const piaCount = this.vpnStatus.connections.length;
+                    const piaNodes = {};
+
+                    this.vpnStatus.connections.forEach((conn, idx) => {
+                        const nodeId = `pia-${conn.region_id}`;
+
+                        // Distribute PIA nodes evenly around the circle
+                        const angle = (idx / piaCount) * 2 * Math.PI - Math.PI / 2; // Start at top
+
+                        const piaNode = {
+                            id: nodeId,
+                            label: conn.region_name,
+                            type: 'pia',
+                            region_id: conn.region_id,
+                            x: centerX + piaRadius * Math.cos(angle),
+                            y: centerY + piaRadius * Math.sin(angle),
+                            angle: angle  // Store for device positioning
+                        };
+
+                        nodes.push(piaNode);
+                        piaNodes[conn.region_id] = piaNode;
+                    });
+
+                    // Position devices clustered near their exit nodes
+                    Object.keys(devicesByRegion).forEach(regionId => {
+                        const devices = devicesByRegion[regionId];
+                        const piaNode = piaNodes[regionId];
+
+                        if (!piaNode) return;
+
+                        // Position devices in an arc near their PIA node
+                        const arcSpan = Math.PI / 4; // 45 degree arc
+                        devices.forEach((device, idx) => {
+                            const deviceCount = devices.length;
+                            const offset = (idx - (deviceCount - 1) / 2) * (arcSpan / Math.max(deviceCount, 1));
+                            const angle = piaNode.angle + offset;
+
+                            nodes.push({
+                                id: `device-${device.id}`,
+                                label: device.hostname,
+                                type: 'device',
+                                online: device.online,
+                                region_id: device.region_id,
+                                x: centerX + meshRadius * Math.cos(angle),
+                                y: centerY + meshRadius * Math.sin(angle)
+                            });
+                        });
+                    });
+
+                    // Position devices without exit regions in remaining space
+                    devicesWithoutRegion.forEach((device, idx) => {
+                        const angle = (idx / Math.max(devicesWithoutRegion.length, 1)) * 2 * Math.PI + Math.PI;
                         nodes.push({
                             id: `device-${device.id}`,
                             label: device.hostname,
@@ -383,50 +447,30 @@
                     });
 
                     // Create mesh connections between all devices
-                    for (let i = 0; i < nodes.length; i++) {
-                        for (let j = i + 1; j < nodes.length; j++) {
+                    const deviceNodes = nodes.filter(n => n.type === 'device');
+                    for (let i = 0; i < deviceNodes.length; i++) {
+                        for (let j = i + 1; j < deviceNodes.length; j++) {
                             links.push({
-                                source: nodes[i],
-                                target: nodes[j],
+                                source: deviceNodes[i],
+                                target: deviceNodes[j],
                                 type: 'mesh'
                             });
                         }
                     }
 
-                    // Add PIA exit nodes on the sides with FIXED positions
-                    const piaCount = this.vpnStatus.connections.length;
-                    this.vpnStatus.connections.forEach((conn, idx) => {
-                        const nodeId = `pia-${conn.region_id}`;
+                    // Add exit connections from devices to their PIA regions
+                    Object.keys(devicesByRegion).forEach(regionId => {
+                        const piaNode = piaNodes[regionId];
+                        if (!piaNode) return;
 
-                        // Alternate between left and right sides
-                        const isLeft = idx % 2 === 0;
-                        const sideIndex = Math.floor(idx / 2);
-
-                        const x = isLeft ? 80 : width - 80;
-                        const y = height / 2 + (sideIndex - Math.floor(piaCount / 4)) * 100;
-
-                        const piaNode = {
-                            id: nodeId,
-                            label: conn.region_name,
-                            type: 'pia',
-                            region_id: conn.region_id,
-                            x: x,
-                            y: y
-                        };
-
-                        nodes.push(piaNode);
-
-                        // Add connections from devices to this PIA region
-                        this.devices.forEach(device => {
-                            if (device.region_id === conn.region_id) {
-                                const deviceNode = nodes.find(n => n.id === `device-${device.id}`);
-                                if (deviceNode) {
-                                    links.push({
-                                        source: deviceNode,
-                                        target: piaNode,
-                                        type: 'exit'
-                                    });
-                                }
+                        devicesByRegion[regionId].forEach(device => {
+                            const deviceNode = nodes.find(n => n.id === `device-${device.id}`);
+                            if (deviceNode) {
+                                links.push({
+                                    source: deviceNode,
+                                    target: piaNode,
+                                    type: 'exit'
+                                });
                             }
                         });
                     });
