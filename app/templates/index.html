@@ -534,14 +534,14 @@
                         history.rawRx.push(Math.max(0, rawRxRate));
                         history.rawTx.push(Math.max(0, rawTxRate));
 
-                        // Keep last 10 raw samples for moving average calculation
-                        if (history.rawRx.length > 10) {
+                        // Keep last 15 raw samples for moving average calculation
+                        if (history.rawRx.length > 15) {
                             history.rawRx.shift();
                             history.rawTx.shift();
                         }
 
-                        // Calculate simple moving average over last 5 samples for smooth lines
-                        const windowSize = Math.min(5, history.rawRx.length);
+                        // Calculate simple moving average over last 10 samples for smoother lines
+                        const windowSize = Math.min(10, history.rawRx.length);
                         const recentRx = history.rawRx.slice(-windowSize);
                         const recentTx = history.rawTx.slice(-windowSize);
 
