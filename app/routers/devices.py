@@ -306,14 +306,14 @@ async def toggle_device_routing(device_id: str, toggle: DeviceRoutingToggle) -> 
 
 @router.post("/{device_id}/region")
 async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -> SuccessResponse:
-    """Set PIA region for a specific device.
+    """Set PIA region for a specific device, or clear it.
 
-    For GUI devices (macOS/iOS): Auto-enables routing when region is selected.
+    For GUI devices (macOS/iOS): Auto-enables routing when region is selected, auto-disables when cleared.
     For servers (Linux): Only updates region, routing must be manually toggled.
 
     Args:
         device_id: Tailscale device ID
-        region_select: Region selection
+        region_select: Region selection (None/empty to clear)
 
     Returns:
         Success response
@@ -324,13 +324,45 @@ async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -
         if not device:
             raise HTTPException(status_code=404, detail="Device not found")
 
+        # Get old region before updating
+        old_region_id = await DeviceRoutingDB.get_region(device_id)
+        device_os = device.get("os", "").lower()
+        is_gui_device = device_os in ["macos", "ios"]
+
+        # Case 1: Clearing region (None or empty string)
+        if not region_select.region_id:
+            # Disable routing
+            ip_addresses = json.loads(device["ip_addresses"])
+            if ip_addresses:
+                device_ip = ip_addresses[0]
+                routing_service = get_routing_service()
+                await routing_service.disable_device_routing(device_ip)
+
+            # Clear region from database
+            await DeviceRoutingDB.set_region(device_id, None)
+            await DeviceRoutingDB.set_enabled(device_id, False)
+
+            # Clean up old VPN if unused
+            if old_region_id:
+                devices_using_old_region = await DeviceRoutingDB.get_devices_by_region(old_region_id)
+                if not devices_using_old_region:
+                    pia_service = get_pia_service()
+                    await pia_service.disconnect_region(old_region_id)
+                    logger.info(f"Disconnected unused VPN region {old_region_id}")
+
+            await ConnectionLogDB.add(
+                "device_region",
+                "success",
+                message=f"Region cleared for device {device['hostname']}"
+            )
+
+            return SuccessResponse(message=f"Region cleared and routing disabled for {device['hostname']}")
+
+        # Case 2: Setting a specific region
         # Validate region
         region = await PIARegionsDB.get_by_id(region_select.region_id)
         if not region:
             raise HTTPException(status_code=404, detail="Region not found")
-
-        # Get old region before updating
-        old_region_id = await DeviceRoutingDB.get_region(device_id)
 
         # Update region in database
         await DeviceRoutingDB.set_region(device_id, region_select.region_id)
@@ -344,54 +376,44 @@ async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -
                 await pia_service.disconnect_region(old_region_id)
                 logger.info(f"Disconnected unused VPN region {old_region_id}")
 
-        # Check device type
-        device_os = device.get("os", "").lower()
-        is_gui_device = device_os in ["macos", "ios"]
+        # Setting a region always enables routing (simplified model)
+        # The region selection IS the routing toggle
 
-        # For GUI devices, auto-enable routing when region is selected
-        # For servers, only update routing if already enabled
-        routing_enabled = await DeviceRoutingDB.is_enabled(device_id)
-        should_enable_routing = is_gui_device or routing_enabled
+        # Get PIA credentials
+        pia_credentials = await SettingsDB.get_json("pia_credentials")
+        if not pia_credentials:
+            raise HTTPException(status_code=400, detail="PIA credentials not configured")
 
-        if should_enable_routing:
-            # Get PIA credentials
-            pia_credentials = await SettingsDB.get_json("pia_credentials")
-            if not pia_credentials:
-                raise HTTPException(status_code=400, detail="PIA credentials not configured")
+        # Parse IP addresses
+        ip_addresses = json.loads(device["ip_addresses"])
+        if not ip_addresses:
+            raise HTTPException(status_code=400, detail="Device has no IP addresses")
 
-            # Parse IP addresses
-            ip_addresses = json.loads(device["ip_addresses"])
-            if not ip_addresses:
-                raise HTTPException(status_code=400, detail="Device has no IP addresses")
+        device_ip = ip_addresses[0]
 
-            device_ip = ip_addresses[0]
+        # Get services
+        pia_service = get_pia_service()
+        routing_service = get_routing_service()
 
-            # Get services
-            pia_service = get_pia_service()
-            routing_service = get_routing_service()
+        # Ensure connection to new region
+        success = await pia_service.ensure_region_connection(
+            region_id=region_select.region_id,
+            region_data=region,
+            username=pia_credentials["username"],
+            password=pia_credentials["password"]
+        )
 
-            # Ensure connection to new region
-            success = await pia_service.ensure_region_connection(
-                region_id=region_select.region_id,
-                region_data=region,
-                username=pia_credentials["username"],
-                password=pia_credentials["password"]
-            )
+        if not success:
+            raise Exception(f"Failed to connect to region {region['name']}")
 
-            if not success:
-                raise Exception(f"Failed to connect to region {region['name']}")
+        # Enable routing to use new interface
+        pia_interface = pia_service._get_interface_name(region_select.region_id)
+        await routing_service.enable_device_routing(device_ip, pia_interface)
 
-            # Update routing to use new interface
-            pia_interface = pia_service._get_interface_name(region_select.region_id)
-            await routing_service.enable_device_routing(device_ip, pia_interface)
+        # Mark routing as enabled in database
+        await DeviceRoutingDB.set_enabled(device_id, True)
 
-            # Mark routing as enabled in database
-            await DeviceRoutingDB.set_enabled(device_id, True)
-
-            if is_gui_device:
-                logger.info(f"Auto-enabled routing for GUI device {device['hostname']} to use region {region['name']}")
-            else:
-                logger.info(f"Updated routing for {device['hostname']} to use region {region['name']}")
+        logger.info(f"Enabled routing for {device['hostname']} to use region {region['name']}")
 
         # Log event
         await ConnectionLogDB.add(
@@ -402,10 +424,10 @@ async def set_device_region(device_id: str, region_select: DeviceRegionSelect) -
         )
 
         # Prepare response message
-        if is_gui_device and should_enable_routing:
-            message = f"Region set to {region['name']} and routing auto-enabled for {device['hostname']}. Select exit node in Tailscale app."
+        if is_gui_device:
+            message = f"Region set to {region['name']} and routing enabled for {device['hostname']}. Select this container as exit node in Tailscale app."
         else:
-            message = f"Region set to {region['name']} for device {device['hostname']}"
+            message = f"Region set to {region['name']} and routing enabled for {device['hostname']}. SSH to device and set Tailscale exit node."
 
         return SuccessResponse(message=message)
 

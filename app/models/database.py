@@ -255,8 +255,8 @@ class DeviceRoutingDB:
             await db.close()
 
     @staticmethod
-    async def set_region(device_id: str, region_id: str):
-        """Set the region for a device."""
+    async def set_region(device_id: str, region_id: Optional[str]):
+        """Set the region for a device (None to clear)."""
         db = await get_db()
         try:
             # Check if row exists

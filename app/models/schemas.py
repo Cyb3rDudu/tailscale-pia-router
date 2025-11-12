@@ -65,7 +65,7 @@ class DeviceRoutingToggle(BaseModel):
 
 class DeviceRegionSelect(BaseModel):
     """Select region for a device."""
-    region_id: str
+    region_id: Optional[str] = None  # None/empty to clear region
 
 
 # Status Schemas
