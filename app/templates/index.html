@@ -492,6 +492,8 @@
                                 timestamps: [],
                                 rx: [],
                                 tx: [],
+                                rawRx: [],  // Store raw rates for moving average
+                                rawTx: [],  // Store raw rates for moving average
                                 prevRx: conn.transfer_rx_bytes || 0,
                                 prevTx: conn.transfer_tx_bytes || 0,
                                 prevTime: Date.now()
@@ -507,42 +509,50 @@
                         const txBytes = conn.transfer_tx_bytes || 0;
 
                         // Validate time delta to prevent magnitude errors
-                        let rxRate = 0;
-                        let txRate = 0;
+                        let rawRxRate = 0;
+                        let rawTxRate = 0;
 
                         if (timeDelta > 0.5 && timeDelta < 10) { // Reasonable time window (0.5s to 10s)
                             const rxDelta = rxBytes - history.prevRx;
                             const txDelta = txBytes - history.prevTx;
 
                             // Calculate instantaneous rate
-                            rxRate = rxDelta / timeDelta;
-                            txRate = txDelta / timeDelta;
+                            rawRxRate = rxDelta / timeDelta;
+                            rawTxRate = txDelta / timeDelta;
 
                             // Sanity check: if rate exceeds 1 Gbps, something is wrong
                             const maxRate = 1024 * 1024 * 1024 / 8; // 1 Gbps in bytes/sec
-                            if (rxRate > maxRate) rxRate = 0;
-                            if (txRate > maxRate) txRate = 0;
-
-                            // Apply moving average for smoother visualization
-                            if (!history.smoothedRx) history.smoothedRx = rxRate;
-                            if (!history.smoothedTx) history.smoothedTx = txRate;
-
-                            // Exponential moving average (alpha = 0.3 for smooth but responsive)
-                            history.smoothedRx = 0.3 * rxRate + 0.7 * history.smoothedRx;
-                            history.smoothedTx = 0.3 * txRate + 0.7 * history.smoothedTx;
-
-                            rxRate = history.smoothedRx;
-                            txRate = history.smoothedTx;
+                            if (rawRxRate > maxRate) rawRxRate = 0;
+                            if (rawTxRate > maxRate) rawTxRate = 0;
                         }
 
                         history.prevRx = rxBytes;
                         history.prevTx = txBytes;
                         history.prevTime = now;
 
+                        // Store raw rates
+                        history.rawRx.push(Math.max(0, rawRxRate));
+                        history.rawTx.push(Math.max(0, rawTxRate));
+
+                        // Keep last 10 raw samples for moving average calculation
+                        if (history.rawRx.length > 10) {
+                            history.rawRx.shift();
+                            history.rawTx.shift();
+                        }
+
+                        // Calculate simple moving average over last 5 samples for smooth lines
+                        const windowSize = Math.min(5, history.rawRx.length);
+                        const recentRx = history.rawRx.slice(-windowSize);
+                        const recentTx = history.rawTx.slice(-windowSize);
+
+                        const smoothedRx = recentRx.reduce((a, b) => a + b, 0) / windowSize;
+                        const smoothedTx = recentTx.reduce((a, b) => a + b, 0) / windowSize;
+
                         // Add to history (keep last 40 data points = 2 minutes at 3s polling)
                         history.timestamps.push(new Date().toLocaleTimeString());
-                        history.rx.push(Math.max(0, rxRate)); // Ensure non-negative
-                        history.tx.push(Math.max(0, txRate));
+                        history.rx.push(smoothedRx);
+                        history.tx.push(smoothedTx);
+
 
                         if (history.timestamps.length > 40) {
                             history.timestamps.shift();
