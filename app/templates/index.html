@@ -462,12 +462,27 @@
                 },
 
                 updateCharts() {
+                    // Track which interfaces are still active
+                    const activeInterfaces = new Set();
+
                     // Create/update charts for each VPN connection
                     this.vpnStatus.connections.forEach(conn => {
+                        activeInterfaces.add(conn.interface);
+
                         const chartId = 'chart-' + conn.interface;
                         const canvas = document.getElementById(chartId);
 
                         if (!canvas) return;
+
+                        // Check if existing chart's canvas is still in the DOM
+                        if (this.charts[conn.interface]) {
+                            const existingCanvas = this.charts[conn.interface].canvas;
+                            if (!existingCanvas || !existingCanvas.isConnected) {
+                                // Canvas was removed from DOM, destroy the old chart
+                                this.charts[conn.interface].destroy();
+                                delete this.charts[conn.interface];
+                            }
+                        }
 
                         // Initialize transfer history for this connection
                         if (!this.transferHistory[conn.interface]) {
@@ -582,12 +597,29 @@
                                 }
                             });
                         } else {
-                            // Update existing chart
+                            // Update existing chart - verify canvas is still valid
                             const chart = this.charts[conn.interface];
-                            chart.data.labels = [...history.timestamps];
-                            chart.data.datasets[0].data = [...history.rx];
-                            chart.data.datasets[1].data = [...history.tx];
-                            chart.update('none');
+                            if (chart && chart.canvas && chart.canvas.isConnected) {
+                                try {
+                                    chart.data.labels = [...history.timestamps];
+                                    chart.data.datasets[0].data = [...history.rx];
+                                    chart.data.datasets[1].data = [...history.tx];
+                                    chart.update('none');
+                                } catch (e) {
+                                    console.error('Chart update failed:', e);
+                                    // Destroy broken chart
+                                    chart.destroy();
+                                    delete this.charts[conn.interface];
+                                }
+                            }
+                        }
+                    });
+
+                    // Clean up charts for interfaces that no longer exist
+                    Object.keys(this.charts).forEach(interface_name => {
+                        if (!activeInterfaces.has(interface_name)) {
+                            this.charts[interface_name].destroy();
+                            delete this.charts[interface_name];
                         }
                     });
                 },
