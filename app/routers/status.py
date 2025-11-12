@@ -1,7 +1,9 @@
 """Status API router for system health and connection status."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 import logging
+import asyncio
+import json
 
 from app.models import (
     PIAStatus,
@@ -240,3 +242,75 @@ async def get_connection_logs(limit: int = 50, offset: int = 0) -> ConnectionLog
     except Exception as e:
         logger.error(f"Failed to get connection logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.websocket("/ws/vpn-status")
+async def websocket_vpn_status(websocket: WebSocket):
+    """WebSocket endpoint for real-time VPN status streaming.
+
+    Sends VPN connection status updates every second including:
+    - Active connections with throughput data
+    - Interface details (handshake, transfer stats)
+    """
+    await websocket.accept()
+    logger.info("WebSocket client connected for VPN status streaming")
+
+    try:
+        while True:
+            try:
+                # Get VPN status with detailed connection info
+                pia_service = get_pia_service()
+                active_connections = await pia_service.get_active_connections()
+
+                # Get detailed info for each active connection
+                connections = []
+                for conn in active_connections:
+                    region_id = conn["region_id"]
+                    interface = conn["interface"]
+
+                    # Get region name
+                    region = await PIARegionsDB.get_by_id(region_id)
+                    region_name = region["name"] if region else region_id
+
+                    # Get interface details (handshake time, transfer stats)
+                    interface_details = await pia_service.get_interface_details(interface)
+
+                    connections.append({
+                        "region_id": region_id,
+                        "region_name": region_name,
+                        "interface": interface,
+                        "last_handshake": interface_details.get("last_handshake", "N/A"),
+                        "transfer_rx": interface_details.get("transfer_rx"),
+                        "transfer_tx": interface_details.get("transfer_tx"),
+                        "transfer_rx_bytes": interface_details.get("transfer_rx_bytes", 0),
+                        "transfer_tx_bytes": interface_details.get("transfer_tx_bytes", 0)
+                    })
+
+                # Send data to client
+                await websocket.send_json({
+                    "active_count": len(connections),
+                    "connections": connections,
+                    "timestamp": asyncio.get_event_loop().time()
+                })
+
+                # Wait 1 second before next update
+                await asyncio.sleep(1)
+
+            except Exception as e:
+                logger.error(f"Error in WebSocket update loop: {e}")
+                # Send error to client but keep connection alive
+                await websocket.send_json({
+                    "error": str(e),
+                    "active_count": 0,
+                    "connections": []
+                })
+                await asyncio.sleep(1)
+
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        try:
+            await websocket.close()
+        except:
+            pass
