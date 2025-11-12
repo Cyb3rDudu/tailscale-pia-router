@@ -194,6 +194,10 @@
     </div>
 
     <script>
+        // Store charts outside Alpine.js reactivity to prevent proxy conflicts
+        const globalCharts = {};
+        const globalTransferHistory = {};
+
         function app() {
             return {
                 loading: false,
@@ -205,8 +209,6 @@
                 selectedRegion: '',
                 devices: [],
                 pollInterval: null,
-                charts: {},
-                transferHistory: {},
                 networkGraph: null,
 
                 async init() {
@@ -475,18 +477,18 @@
                         if (!canvas) return;
 
                         // Check if existing chart's canvas is still in the DOM
-                        if (this.charts[conn.interface]) {
-                            const existingCanvas = this.charts[conn.interface].canvas;
+                        if (globalCharts[conn.interface]) {
+                            const existingCanvas = globalCharts[conn.interface].canvas;
                             if (!existingCanvas || !existingCanvas.isConnected) {
                                 // Canvas was removed from DOM, destroy the old chart
-                                this.charts[conn.interface].destroy();
-                                delete this.charts[conn.interface];
+                                globalCharts[conn.interface].destroy();
+                                delete globalCharts[conn.interface];
                             }
                         }
 
                         // Initialize transfer history for this connection
-                        if (!this.transferHistory[conn.interface]) {
-                            this.transferHistory[conn.interface] = {
+                        if (!globalTransferHistory[conn.interface]) {
+                            globalTransferHistory[conn.interface] = {
                                 timestamps: [],
                                 rx: [],
                                 tx: [],
@@ -496,7 +498,7 @@
                             };
                         }
 
-                        const history = this.transferHistory[conn.interface];
+                        const history = globalTransferHistory[conn.interface];
                         const now = Date.now();
                         const timeDelta = (now - history.prevTime) / 1000; // seconds
 
@@ -523,9 +525,9 @@
                         }
 
                         // Create or update chart
-                        if (!this.charts[conn.interface]) {
+                        if (!globalCharts[conn.interface]) {
                             const ctx = canvas.getContext('2d');
-                            this.charts[conn.interface] = new Chart(ctx, {
+                            globalCharts[conn.interface] = new Chart(ctx, {
                                 type: 'line',
                                 data: {
                                     labels: [...history.timestamps],
@@ -598,7 +600,7 @@
                             });
                         } else {
                             // Update existing chart - verify canvas is still valid
-                            const chart = this.charts[conn.interface];
+                            const chart = globalCharts[conn.interface];
                             if (chart && chart.canvas && chart.canvas.isConnected) {
                                 try {
                                     chart.data.labels = [...history.timestamps];
@@ -609,23 +611,23 @@
                                     console.error('Chart update failed:', e);
                                     // Destroy broken chart
                                     chart.destroy();
-                                    delete this.charts[conn.interface];
+                                    delete globalCharts[conn.interface];
                                 }
                             }
                         }
                     });
 
                     // Clean up charts for interfaces that no longer exist
-                    Object.keys(this.charts).forEach(interface_name => {
+                    Object.keys(globalCharts).forEach(interface_name => {
                         if (!activeInterfaces.has(interface_name)) {
-                            this.charts[interface_name].destroy();
-                            delete this.charts[interface_name];
+                            globalCharts[interface_name].destroy();
+                            delete globalCharts[interface_name];
                         }
                     });
                 },
 
                 getCurrentRate(interface_name, direction) {
-                    const history = this.transferHistory[interface_name];
+                    const history = globalTransferHistory[interface_name];
                     if (!history || !history[direction] || history[direction].length === 0) {
                         return 0;
                     }
