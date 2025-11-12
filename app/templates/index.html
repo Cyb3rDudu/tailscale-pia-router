@@ -351,12 +351,13 @@
                     const linkGroup = svg.append('g').attr('class', 'links');
                     const nodeGroup = svg.append('g').attr('class', 'nodes');
 
-                    // Create force simulation
+                    // Create force simulation with reduced forces for stability
                     const simulation = d3.forceSimulation()
-                        .force('link', d3.forceLink().id(d => d.id).distance(d => d.type === 'mesh' ? 100 : 150))
-                        .force('charge', d3.forceManyBody().strength(-300))
+                        .force('link', d3.forceLink().id(d => d.id).distance(d => d.type === 'mesh' ? 80 : 150))
+                        .force('charge', d3.forceManyBody().strength(-150))  // Reduced from -300
                         .force('center', d3.forceCenter(width / 2, height / 2))
-                        .force('collision', d3.forceCollide().radius(40));
+                        .force('collision', d3.forceCollide().radius(40))
+                        .alphaDecay(0.05);  // Faster settling
 
                     this.networkGraph = { svg, linkGroup, nodeGroup, width, height, simulation };
                 },
@@ -370,14 +371,23 @@
                     const nodes = [];
                     const links = [];
 
-                    // Add all Tailscale device nodes (will form a mesh)
-                    this.devices.forEach(device => {
+                    // Add all Tailscale device nodes (will form a mesh in center)
+                    // Initialize devices in a circle pattern in the center
+                    const deviceCount = this.devices.length;
+                    const centerX = width / 2;
+                    const centerY = height / 2;
+                    const meshRadius = 80;
+
+                    this.devices.forEach((device, idx) => {
+                        const angle = (idx / deviceCount) * 2 * Math.PI;
                         nodes.push({
                             id: `device-${device.id}`,
                             label: device.hostname,
                             type: 'device',
                             online: device.online,
-                            region_id: device.region_id
+                            region_id: device.region_id,
+                            x: centerX + meshRadius * Math.cos(angle),
+                            y: centerY + meshRadius * Math.sin(angle)
                         });
                     });
 
@@ -392,14 +402,27 @@
                         }
                     }
 
-                    // Add PIA exit nodes
-                    this.vpnStatus.connections.forEach(conn => {
+                    // Add PIA exit nodes on the sides with FIXED positions
+                    const piaCount = this.vpnStatus.connections.length;
+                    this.vpnStatus.connections.forEach((conn, idx) => {
                         const nodeId = `pia-${conn.region_id}`;
+
+                        // Alternate between left and right sides
+                        const isLeft = idx % 2 === 0;
+                        const sideIndex = Math.floor(idx / 2);
+
+                        const x = isLeft ? 50 : width - 50;
+                        const y = height / 2 + (sideIndex - Math.floor(piaCount / 4)) * 100;
+
                         nodes.push({
                             id: nodeId,
                             label: conn.region_name,
                             type: 'pia',
-                            region_id: conn.region_id
+                            region_id: conn.region_id,
+                            x: x,
+                            y: y,
+                            fx: x,  // Fixed X position
+                            fy: y   // Fixed Y position
                         });
                     });
 
@@ -472,8 +495,13 @@
                     simulation.force('link')
                         .links(links);
 
-                    // Restart simulation
-                    simulation.alpha(1).restart();
+                    // Restart simulation with limited iterations
+                    simulation.alpha(0.3).restart();
+
+                    // Stop simulation after it settles to prevent constant jitter
+                    setTimeout(() => {
+                        simulation.stop();
+                    }, 3000);  // Stop after 3 seconds
 
                     function ticked() {
                         allLinks
@@ -499,8 +527,11 @@
 
                     function dragended(event, d) {
                         if (!event.active) simulation.alphaTarget(0);
-                        d.fx = null;
-                        d.fy = null;
+                        // Don't release PIA nodes, they should stay fixed
+                        if (d.type !== 'pia') {
+                            d.fx = null;
+                            d.fy = null;
+                        }
                     }
                 },
 
@@ -662,7 +693,7 @@
                                     }
                                 ],
                                 legend: {
-                                    show: true
+                                    show: false  // Hide legend, we show current rates in the card UI
                                 },
                                 cursor: {
                                     drag: {
