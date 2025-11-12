@@ -35,14 +35,29 @@
                             <div :class="vpnStatus.active_count > 0 ? 'bg-green-500' : 'bg-gray-500'" class="w-3 h-3 rounded-full mr-2"></div>
                             <span class="text-sm dark:text-gray-200" x-text="vpnStatus.active_count > 0 ? `${vpnStatus.active_count} active connection${vpnStatus.active_count > 1 ? 's' : ''}` : 'No active connections'"></span>
                         </div>
-                        <template x-if="vpnStatus.regions && vpnStatus.regions.length > 0">
-                            <div class="text-sm text-gray-600 dark:text-gray-400">
-                                <span class="font-medium">Regions:</span>
-                                <div class="mt-1 space-y-1">
-                                    <template x-for="region in vpnStatus.regions" :key="region">
-                                        <div class="text-xs" x-text="region"></div>
-                                    </template>
-                                </div>
+                        <template x-if="vpnStatus.connections && vpnStatus.connections.length > 0">
+                            <div class="mt-3 space-y-3">
+                                <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
+                                    <div class="text-sm border-l-2 border-blue-500 pl-3 py-1">
+                                        <div class="font-medium text-gray-900 dark:text-white" x-text="conn.region_name"></div>
+                                        <div class="text-xs text-gray-600 dark:text-gray-400 mt-1 space-y-0.5">
+                                            <div>
+                                                <span class="font-medium">Interface:</span>
+                                                <span x-text="conn.interface"></span>
+                                            </div>
+                                            <div>
+                                                <span class="font-medium">Last Handshake:</span>
+                                                <span x-text="conn.last_handshake || 'N/A'"></span>
+                                            </div>
+                                            <template x-if="conn.transfer_rx && conn.transfer_tx">
+                                                <div>
+                                                    <span class="font-medium">Transfer:</span>
+                                                    <span x-text="`↓ ${conn.transfer_rx}, ↑ ${conn.transfer_tx}`"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
                             </div>
                         </template>
                     </div>
@@ -84,7 +99,6 @@
                     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                         <thead class="bg-gray-50 dark:bg-gray-700">
                             <tr>
-                                <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider w-8"></th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Device</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">IP Address</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">OS</th>
@@ -96,16 +110,6 @@
                             <tbody class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
                                 <!-- Main device row -->
                                 <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <td class="px-2 py-4 whitespace-nowrap">
-                                        <button @click="toggleDeviceExpanded(device.id)" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                                            <svg x-show="!expandedDevices.includes(device.id)" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                                            </svg>
-                                            <svg x-show="expandedDevices.includes(device.id)" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
-                                            </svg>
-                                        </button>
-                                    </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-sm font-medium text-gray-900 dark:text-white" x-text="device.hostname"></div>
                                     </td>
@@ -135,29 +139,6 @@
                                         </div>
                                     </td>
                                 </tr>
-                                <!-- Expandable detail row -->
-                                <tr x-show="expandedDevices.includes(device.id)" class="bg-gray-50 dark:bg-gray-700">
-                                    <td colspan="6" class="px-8 py-4">
-                                        <div class="grid grid-cols-2 gap-4 text-sm">
-                                            <div>
-                                                <span class="font-medium text-gray-700 dark:text-gray-300">VPN Interface:</span>
-                                                <span class="ml-2 text-gray-600 dark:text-gray-400" x-text="device.routing_enabled && device.region_id ? `pia-${device.region_id}` : 'Not connected'"></span>
-                                            </div>
-                                            <div>
-                                                <span class="font-medium text-gray-700 dark:text-gray-300">VPN Status:</span>
-                                                <span class="ml-2" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'" x-text="device.routing_enabled ? 'Connected' : 'Disconnected'"></span>
-                                            </div>
-                                            <div>
-                                                <span class="font-medium text-gray-700 dark:text-gray-300">Public IP:</span>
-                                                <span class="ml-2 text-gray-600 dark:text-gray-400">Loading...</span>
-                                            </div>
-                                            <div>
-                                                <span class="font-medium text-gray-700 dark:text-gray-300">Last Handshake:</span>
-                                                <span class="ml-2 text-gray-600 dark:text-gray-400">N/A</span>
-                                            </div>
-                                        </div>
-                                    </td>
-                                </tr>
                             </tbody>
                         </template>
                     </table>
@@ -174,7 +155,7 @@
             return {
                 loading: false,
                 piaStatus: { connected: false, region_name: null, ip_address: null },
-                vpnStatus: { active_count: 0, regions: [] },
+                vpnStatus: { active_count: 0, connections: [] },
                 tailscaleStatus: { running: false, exit_node_enabled: false, hostname: null },
                 systemHealth: { healthy: false, messages: [] },
                 regions: [],
@@ -226,10 +207,10 @@
                         this.vpnStatus = await response.json();
                     } catch (error) {
                         console.error('Failed to load VPN status:', error);
-                        // Fallback to single connection count if endpoint doesn't exist
+                        // Fallback to empty connections if endpoint fails
                         this.vpnStatus = {
-                            active_count: this.piaStatus.connected ? 1 : 0,
-                            regions: this.piaStatus.connected && this.piaStatus.region_name ? [this.piaStatus.region_name] : []
+                            active_count: 0,
+                            connections: []
                         };
                     }
                 },

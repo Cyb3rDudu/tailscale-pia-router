@@ -651,7 +651,7 @@ method=disabled
             List of active connection info dicts with region_id and interface
         """
         try:
-            # Get list of active connections
+            # Get list of active interface names from nmcli
             result = subprocess.run(
                 ["nmcli", "connection", "show", "--active"],
                 capture_output=True,
@@ -659,21 +659,38 @@ method=disabled
                 check=True
             )
 
-            active_connections = []
+            active_interfaces = set()
             for line in result.stdout.split('\n'):
                 if WG_INTERFACE_PREFIX in line:
-                    # Extract connection name (interface name)
                     parts = line.split()
                     if len(parts) > 0:
                         interface_name = parts[0]
-                        # Extract region_id from interface name
                         if interface_name.startswith(WG_INTERFACE_PREFIX):
-                            region_id = interface_name[len(WG_INTERFACE_PREFIX):]
-                            active_connections.append({
-                                "region_id": region_id,
-                                "interface": interface_name,
-                                "connected": True
-                            })
+                            active_interfaces.add(interface_name)
+
+            # Get region_ids from database for enabled devices
+            from app.models import DeviceRoutingDB
+            routing_configs = await DeviceRoutingDB.get_all()
+
+            active_connections = []
+            seen_regions = set()
+
+            for config in routing_configs:
+                if config.get("enabled") and config.get("region_id"):
+                    region_id = config["region_id"]
+                    # Skip if already added
+                    if region_id in seen_regions:
+                        continue
+
+                    # Check if this region's interface is actually active
+                    interface_name = self._get_interface_name(region_id)
+                    if interface_name in active_interfaces:
+                        active_connections.append({
+                            "region_id": region_id,
+                            "interface": interface_name,
+                            "connected": True
+                        })
+                        seen_regions.add(region_id)
 
             logger.info(f"Found {len(active_connections)} active PIA connections")
             return active_connections
@@ -681,6 +698,58 @@ method=disabled
         except Exception as e:
             logger.error(f"Failed to get active connections: {e}")
             return []
+
+    async def get_interface_details(self, interface_name: str) -> Dict:
+        """Get detailed information about a WireGuard interface.
+
+        Args:
+            interface_name: WireGuard interface name (e.g., pia-sg-singapo)
+
+        Returns:
+            Dictionary with interface details including handshake time
+        """
+        try:
+            # Get WireGuard interface stats
+            result = subprocess.run(
+                ["wg", "show", interface_name],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            details = {
+                "interface": interface_name,
+                "last_handshake": None,
+                "transfer_rx": None,
+                "transfer_tx": None
+            }
+
+            # Parse wg show output
+            for line in result.stdout.split('\n'):
+                line = line.strip()
+                if line.startswith("latest handshake:"):
+                    # Extract handshake time (e.g., "1 minute, 23 seconds ago")
+                    handshake_text = line.replace("latest handshake:", "").strip()
+                    details["last_handshake"] = handshake_text
+                elif line.startswith("transfer:"):
+                    # Extract transfer stats (e.g., "12.45 MiB received, 3.21 MiB sent")
+                    transfer_text = line.replace("transfer:", "").strip()
+                    if "received" in transfer_text and "sent" in transfer_text:
+                        parts = transfer_text.split(",")
+                        if len(parts) == 2:
+                            details["transfer_rx"] = parts[0].strip()
+                            details["transfer_tx"] = parts[1].strip()
+
+            return details
+
+        except Exception as e:
+            logger.error(f"Failed to get interface details for {interface_name}: {e}")
+            return {
+                "interface": interface_name,
+                "last_handshake": "N/A",
+                "transfer_rx": None,
+                "transfer_tx": None
+            }
 
     async def get_region_status(self, region_id: str) -> Dict:
         """Get status of a specific region connection.

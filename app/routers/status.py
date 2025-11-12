@@ -67,23 +67,37 @@ async def get_vpn_status() -> dict:
     """Get VPN connection status summary (all active connections).
 
     Returns:
-        VPN status with active connection count and regions
+        VPN status with active connection count and detailed connection info
     """
     try:
         pia_service = get_pia_service()
         active_connections = await pia_service.get_active_connections()
 
-        # Get region names for active connections
-        region_names = []
+        # Get detailed info for each active connection
+        connections = []
         for conn in active_connections:
             region_id = conn["region_id"]
+            interface = conn["interface"]
+
+            # Get region name
             region = await PIARegionsDB.get_by_id(region_id)
-            if region:
-                region_names.append(region["name"])
+            region_name = region["name"] if region else region_id
+
+            # Get interface details (handshake time, transfer stats)
+            interface_details = await pia_service.get_interface_details(interface)
+
+            connections.append({
+                "region_id": region_id,
+                "region_name": region_name,
+                "interface": interface,
+                "last_handshake": interface_details.get("last_handshake", "N/A"),
+                "transfer_rx": interface_details.get("transfer_rx"),
+                "transfer_tx": interface_details.get("transfer_tx")
+            })
 
         return {
-            "active_count": len(active_connections),
-            "regions": region_names
+            "active_count": len(connections),
+            "connections": connections
         }
 
     except Exception as e:
