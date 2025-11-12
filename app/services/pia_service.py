@@ -365,8 +365,9 @@ PersistentKeepalive = 25
             conn_uuid = str(uuid.uuid4())
 
             # Create NetworkManager keyfile format configuration
-            # NOTE: DNS is intentionally NOT configured to avoid DNS resolution issues
-            # with Tailscale API and other services. The system DNS will be used.
+            # DNS is configured to prevent leaks to local/ISP DNS servers
+            # DNS queries will be sent through the VPN tunnel to PIA's DNS servers
+            # High priority (50) ensures VPN DNS is used over system DNS (100)
             nm_config = f"""[connection]
 id={interface_name}
 uuid={conn_uuid}
@@ -383,7 +384,8 @@ persistent-keepalive={keepalive}
 
 [ipv4]
 address1={address}
-dns-priority=100
+dns={dns_setting}
+dns-priority=50
 ignore-auto-dns=yes
 method=manual
 never-default=yes
