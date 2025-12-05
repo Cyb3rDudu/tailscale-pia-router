@@ -18,9 +18,7 @@ When using Tailscale with "Use Tailscale DNS" enabled, DNS queries were being se
 
 Implemented a DNS proxy using dnsmasq on the PIA exit node container that:
 1. Listens on the Tailscale interface (100.112.7.98:53)
-2. Provides split DNS:
-   - `.catdev.io` domains → Pi-hole (10.36.0.101) for local services
-   - All other queries → Cloudflare DNS (1.1.1.1) via VPN tunnel
+2. Forwards ALL DNS queries to Cloudflare DNS (1.1.1.1, 1.0.0.1) via VPN tunnel
 3. Prevents DNS leaks by routing all queries through VPN
 
 ## Configuration Files
@@ -38,10 +36,7 @@ bind-dynamic
 # DNS cache size
 cache-size=1000
 
-# Forward .catdev.io domains to Pi-hole for local services
-server=/catdev.io/10.36.0.101
-
-# Forward all other queries to Cloudflare DNS (devices will route this through VPN)
+# Forward ALL queries to Cloudflare DNS (devices will route this through VPN)
 # Using public DNS that is accessible from container
 server=1.1.1.1
 server=1.0.0.1
@@ -71,8 +66,7 @@ no-negcache
 
 - `bind-dynamic`: Allows proper routing when querying from same host
 - `interface=tailscale0`: Only listen on Tailscale network
-- `server=/catdev.io/10.36.0.101`: Split DNS for local domains
-- `server=1.1.1.1` and `server=1.0.0.1`: Public DNS accessible from container
+- `server=1.1.1.1` and `server=1.0.0.1`: Cloudflare DNS servers (all queries)
 - `no-resolv`: Don't read `/etc/resolv.conf` (prevents loops)
 
 ### Why Cloudflare DNS Instead of PIA DNS?
@@ -191,9 +185,9 @@ tailscale up --accept-routes --advertise-exit-node
 dig @100.112.7.98 google.com +short
 # Expected: IP address (e.g., 216.58.213.110)
 
-# Test local domain resolution
+# Test catdev.io domain resolution (configured in Cloudflare)
 dig @100.112.7.98 n8n.catdev.io +short
-# Expected: 10.36.0.100 (from Pi-hole)
+# Expected: IP address from Cloudflare DNS
 
 # Check dnsmasq logs
 tail -50 /var/log/dnsmasq.log
@@ -216,9 +210,9 @@ tail -50 /var/log/dnsmasq.log
    - Visit `https://whatismyipaddress.com`
    - Should show Singapore IP
 
-5. **Test local domain access:**
+5. **Test catdev.io domain access:**
    - Access `https://n8n.catdev.io`
-   - Should work (routed through Pi-hole)
+   - Should work (resolved via Cloudflare DNS)
 
 ### From macOS (mothership)
 
@@ -257,15 +251,12 @@ curl -s https://www.dnsleaktest.com/results.html
 │  ┌─────────────────────────────────────┐    │
 │  │  dnsmasq (port 53)                  │    │
 │  │  - Listens on: 100.112.7.98:53     │    │
-│  │  - Split DNS:                       │    │
-│  │    *.catdev.io → 10.36.0.101       │    │
-│  │    * → 1.1.1.1 (Cloudflare)        │    │
+│  │  - Forwards ALL queries to:         │    │
+│  │    1.1.1.1 (Cloudflare)            │    │
+│  │    1.0.0.1 (Cloudflare)            │    │
 │  └───────────┬─────────────────────────┘    │
 │              │                               │
-│              ├─ .catdev.io? ─────────────────┼─→ Pi-hole
-│              │                               │   (10.36.0.101)
-│              │                               │
-│              └─ Other? ───────┐              │
+│              └───────┐                       │
 │                                │              │
 │  ┌─────────────────────────────▼─────────┐  │
 │  │  WireGuard (pia-sg)                   │  │
@@ -299,17 +290,18 @@ curl -s https://www.dnsleaktest.com/results.html
 
 **Result:** DNS query encrypted, FortiGate cannot see domain name
 
-### For Local Domains (e.g., n8n.catdev.io)
+### For All Domains (Including catdev.io)
 
 1. iPhone sends DNS query to Tailscale DNS (100.112.7.98)
 2. Query routed through Tailscale network to container
 3. dnsmasq receives query on 100.112.7.98:53
-4. dnsmasq matches `.catdev.io` rule, forwards to Pi-hole (10.36.0.101)
-5. Pi-hole resolves to local IP (10.36.0.100)
-6. Response: dnsmasq → iPhone
-7. iPhone connects to 10.36.0.100 via local network
+4. dnsmasq forwards to Cloudflare DNS (1.1.1.1)
+5. **Client's policy routing** sends Cloudflare query through VPN (pia-sg)
+6. VPN encrypts and forwards to Cloudflare
+7. Cloudflare resolves domain (including catdev.io domains configured in Cloudflare)
+8. Response comes back through VPN → dnsmasq → iPhone
 
-**Result:** Local services accessible, DNS resolved through Pi-hole
+**Result:** All DNS queries encrypted through VPN, domains resolved by Cloudflare (including catdev.io)
 
 ## Troubleshooting
 
@@ -341,20 +333,17 @@ dig @100.112.7.98 google.com +short
 tail -50 /var/log/dnsmasq.log
 ```
 
-### Local Domains Not Resolving
+### Domains Not Resolving
 
 ```bash
-# Verify Pi-hole is accessible
-ping -c 2 10.36.0.101
-
-# Test direct query to Pi-hole
-dig @10.36.0.101 n8n.catdev.io +short
+# Test direct query to Cloudflare
+dig @1.1.1.1 n8n.catdev.io +short
 
 # Check dnsmasq config
-grep "catdev.io" /etc/dnsmasq.d/pia-proxy.conf
+cat /etc/dnsmasq.d/pia-proxy.conf
 
 # Check dnsmasq logs
-grep "catdev.io" /var/log/dnsmasq.log
+tail -50 /var/log/dnsmasq.log
 ```
 
 ### Still Seeing FortiGate Warnings
@@ -417,15 +406,17 @@ server=8.8.4.4
 systemctl restart dnsmasq
 ```
 
-### Add More Split DNS Domains
+### Add Split DNS Domains (Optional)
+
+If you need to route specific domains to different DNS servers:
 
 ```bash
 # Edit config
 nano /etc/dnsmasq.d/pia-proxy.conf
 
-# Add additional domain rules:
-server=/example.local/10.36.0.101
-server=/home.local/192.168.1.1
+# Add domain-specific rules:
+server=/example.local/192.168.1.1
+server=/internal.corp/10.0.0.1
 
 # Restart
 systemctl restart dnsmasq
@@ -433,8 +424,8 @@ systemctl restart dnsmasq
 
 ## Security Considerations
 
-1. **DNS Privacy:** All public DNS queries are encrypted through VPN tunnel
-2. **Local Network Access:** `.catdev.io` queries still go to Pi-hole (acceptable for homelab)
+1. **DNS Privacy:** ALL DNS queries are encrypted through VPN tunnel (including catdev.io)
+2. **Cloudflare DNS:** All domains resolved via Cloudflare DNS (1.1.1.1, 1.0.0.1)
 3. **No Authentication:** dnsmasq has no authentication (acceptable - only accessible via Tailscale)
 4. **DNSSEC:** Enabled in configuration for additional security
 5. **Logging:** Query logging enabled by default (disable after testing for privacy)
