@@ -2,6 +2,7 @@
 
 import logging
 import json
+import asyncio
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -136,6 +137,122 @@ async def restore_routing_rules() -> int:
     return restored
 
 
+async def reconciliation_loop():
+    """Background task that continuously reconciles NetworkManager state with database.
+
+    This loop runs every 5 seconds and ensures that:
+    - VPN connections that should be up are actually up
+    - Routing rules match the database configuration
+    - Failed connections are automatically restored
+    """
+    import subprocess
+
+    logger.info("Starting reconciliation loop...")
+
+    while True:
+        try:
+            await asyncio.sleep(5)  # Check every 5 seconds
+
+            # Get all routing configurations from database
+            routing_configs = await DeviceRoutingDB.get_all()
+
+            # Get PIA credentials
+            pia_credentials = await SettingsDB.get_json("pia_credentials")
+            if not pia_credentials:
+                continue
+
+            # Get services
+            pia_service = get_pia_service()
+            routing_service = get_routing_service()
+
+            # Track which connections should be active
+            expected_connections = set()
+
+            # Check each enabled device
+            for config in routing_configs:
+                if not config.get("enabled") or not config.get("region_id"):
+                    continue
+
+                device_id = config["device_id"]
+                region_id = config["region_id"]
+                expected_connections.add(region_id)
+
+                # Get device info
+                device = await TailscaleDevicesDB.get_by_id(device_id)
+                if not device:
+                    continue
+
+                # Parse IP addresses
+                ip_addresses = json.loads(device["ip_addresses"])
+                if not ip_addresses:
+                    continue
+
+                device_ip = ip_addresses[0]
+
+                # Get region info
+                region = await PIARegionsDB.get_by_id(region_id)
+                if not region:
+                    continue
+
+                # Check if VPN connection is actually up
+                interface_name = pia_service._get_interface_name(region_id)
+
+                # Check if interface exists
+                result = subprocess.run(
+                    ["ip", "link", "show", interface_name],
+                    capture_output=True,
+                    check=False
+                )
+
+                interface_exists = result.returncode == 0
+
+                if not interface_exists:
+                    logger.warning(f"Reconciliation: Interface {interface_name} missing for {device['hostname']}, restoring...")
+
+                    # Restore VPN connection
+                    success = await pia_service.ensure_region_connection(
+                        region_id=region_id,
+                        region_data=region,
+                        username=pia_credentials["username"],
+                        password=pia_credentials["password"]
+                    )
+
+                    if not success:
+                        logger.error(f"Reconciliation: Failed to restore VPN for {device['hostname']}")
+                        continue
+
+                    logger.info(f"Reconciliation: Restored VPN connection {interface_name}")
+
+                # Check if routing rule exists
+                result = subprocess.run(
+                    ["ip", "rule", "list"],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+
+                # Get table ID for this device
+                if device_ip in routing_service.device_table_map:
+                    table_id = routing_service.device_table_map[device_ip]
+                    rule_exists = f"from {device_ip} lookup {table_id}" in result.stdout
+
+                    if not rule_exists:
+                        logger.warning(f"Reconciliation: Routing rule missing for {device['hostname']} ({device_ip}), restoring...")
+
+                        # Restore routing rule
+                        success = await routing_service.enable_device_routing(device_ip, interface_name)
+
+                        if success:
+                            logger.info(f"Reconciliation: Restored routing for {device['hostname']}")
+                        else:
+                            logger.error(f"Reconciliation: Failed to restore routing for {device['hostname']}")
+
+        except Exception as e:
+            logger.error(f"Error in reconciliation loop: {e}", exc_info=True)
+            # Continue the loop even if there's an error
+            continue
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events."""
@@ -167,12 +284,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to restore routing rules: {e}")
 
+    # Start background reconciliation loop
+    reconciliation_task = asyncio.create_task(reconciliation_loop())
+    logger.info("Background reconciliation loop started")
+
     logger.info("Application startup complete")
 
     yield
 
     # Shutdown
     logger.info("Shutting down application...")
+    reconciliation_task.cancel()
+    try:
+        await reconciliation_task
+    except asyncio.CancelledError:
+        logger.info("Reconciliation loop stopped")
 
 
 # Create FastAPI app
