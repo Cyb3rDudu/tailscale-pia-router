@@ -378,7 +378,7 @@
                     </div>
 
                     <!-- Enhanced Metrics Summary with Current + Average -->
-                    <div class="grid grid-cols-3 gap-3 mb-4">
+                    <div class="grid grid-cols-2 gap-3 mb-4">
                         <div class="bg-slate-800 rounded p-3 border border-slate-700">
                             <div class="text-xs text-slate-400 mb-1 font-medium">Download</div>
                             <div class="text-base font-bold text-green-400" x-text="getCurrentDownloadRate()"></div>
@@ -391,13 +391,6 @@
                             <div class="text-base font-bold text-blue-400" x-text="getCurrentUploadRate()"></div>
                             <div class="text-xs text-slate-500 mt-1">
                                 <span class="text-slate-400">avg</span> <span x-text="getAverageUploadRate()"></span>
-                            </div>
-                        </div>
-                        <div class="bg-slate-800 rounded p-3 border border-slate-700">
-                            <div class="text-xs text-slate-400 mb-1 font-medium">Latency</div>
-                            <div class="text-base font-bold" :class="getLatencyColor()" x-text="getCurrentLatency()"></div>
-                            <div class="text-xs text-slate-500 mt-1">
-                                <span class="text-slate-400">avg</span> <span x-text="getAverageLatency()"></span>
                             </div>
                         </div>
                     </div>
@@ -446,34 +439,6 @@
                         </div>
                     </div>
 
-                    <!-- Latency Graph -->
-                    <div>
-                        <h3 class="text-sm font-medium text-slate-300 mb-2">Latency</h3>
-                        <div id="latency-chart" class="bg-slate-800 rounded p-2 border border-slate-700 relative transition-opacity duration-300"
-                             :class="chartTransitioning ? 'opacity-50' : 'opacity-100'"
-                             style="height: 150px;">
-                            <!-- Loading Skeleton -->
-                            <div x-show="metricsLoading" class="absolute inset-0 flex items-center justify-center bg-slate-800 rounded">
-                                <div class="flex flex-col items-center gap-2">
-                                    <svg class="animate-spin h-5 w-5 text-amber-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    <span class="text-xs text-slate-400">Loading metrics...</span>
-                                </div>
-                            </div>
-                            <!-- Empty State -->
-                            <div x-show="!hasMetricsData() && !metricsLoading" class="flex items-center justify-center h-full">
-                                <div class="text-center">
-                                    <svg class="w-12 h-12 mx-auto mb-2 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                    </svg>
-                                    <p class="text-xs text-slate-500">No latency data</p>
-                                    <p class="text-xs text-slate-600 mt-1">for <span x-text="getSelectedEndpointName()"></span></p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Device Routing Card -->
@@ -698,9 +663,9 @@
 
                 // WebSocket for real-time metrics
                 websocket: null,
-                metricsData: {},  // { interface: { timestamps: [], rx: [], tx: [], latency: [] } }
+                metricsData: {},  // { interface: { timestamps: [], rx: [], tx: [] } }
                 selectedTimeRange: '5min',  // '5min' | '1h' | '24h'
-                metricsCharts: {},  // { throughput: uPlotInstance, latency: uPlotInstance }
+                metricsCharts: {},  // { throughput: uPlotInstance }
                 showRawData: false,  // Toggle for smoothed vs raw throughput data
                 metricsLoading: false,  // Loading state for metrics
                 chartTransitioning: false,  // Fade animation during range switch
@@ -1186,7 +1151,6 @@
                                 timestamps: [],
                                 rx: [],
                                 tx: [],
-                                latency: [],
                                 prevRxBytes: conn.transfer_rx_bytes,
                                 prevTxBytes: conn.transfer_tx_bytes,
                                 prevTime: now
@@ -1201,21 +1165,16 @@
                         const rxRate = (conn.transfer_rx_bytes - history.prevRxBytes) / timeDelta;
                         const txRate = (conn.transfer_tx_bytes - history.prevTxBytes) / timeDelta;
 
-                        // Parse latency from last_handshake (e.g., "5 seconds ago")
-                        const latency = this.parseHandshakeLatency(conn.last_handshake);
-
                         // Add to buffers
                         history.timestamps.push(now);
                         history.rx.push(rxRate);
                         history.tx.push(txRate);
-                        history.latency.push(latency);
 
                         // Limit to 120 points (2 minutes at 1-second intervals)
                         if (history.timestamps.length > 120) {
                             history.timestamps.shift();
                             history.rx.shift();
                             history.tx.shift();
-                            history.latency.shift();
                         }
 
                         // Update previous values
@@ -1226,13 +1185,6 @@
 
                     // Update charts if visible
                     this.$nextTick(() => this.updateMetricsCharts());
-                },
-
-                parseHandshakeLatency(handshakeStr) {
-                    // Parse "5 seconds ago" -> 5000ms
-                    if (!handshakeStr || handshakeStr === 'N/A') return null;
-                    const match = handshakeStr.match(/(\d+)\s+seconds?\s+ago/);
-                    return match ? parseInt(match[1]) * 1000 : null;
                 },
 
                 formatBytes(bytes) {
@@ -1946,9 +1898,6 @@
 
                 // Create/update throughput chart
                 this.renderThroughputChart(filteredData);
-
-                // Create/update latency chart
-                this.renderLatencyChart(filteredData);
             },
 
             // Data smoothing using Exponential Moving Average
@@ -1974,23 +1923,20 @@
                 let currentBucket = {
                     timestamps: [],
                     rx: [],
-                    tx: [],
-                    latency: []
+                    tx: []
                 };
 
                 for (let i = 0; i < data.timestamps.length; i++) {
                     currentBucket.timestamps.push(data.timestamps[i]);
                     currentBucket.rx.push(data.rx[i]);
                     currentBucket.tx.push(data.tx[i]);
-                    currentBucket.latency.push(data.latency[i]);
 
                     if (currentBucket.timestamps.length >= bucketSize || i === data.timestamps.length - 1) {
                         buckets.push(currentBucket);
                         currentBucket = {
                             timestamps: [],
                             rx: [],
-                            tx: [],
-                            latency: []
+                            tx: []
                         };
                     }
                 }
@@ -1999,8 +1945,7 @@
                 const aggregated = {
                     timestamps: [],
                     rx: [],
-                    tx: [],
-                    latency: []
+                    tx: []
                 };
 
                 buckets.forEach(bucket => {
@@ -2012,13 +1957,6 @@
                     const avgTx = bucket.tx.reduce((sum, val) => sum + val, 0) / bucket.tx.length;
                     aggregated.rx.push(avgRx);
                     aggregated.tx.push(avgTx);
-
-                    // Average latency (excluding nulls)
-                    const validLatencies = bucket.latency.filter(l => l !== null && l !== undefined);
-                    const avgLatency = validLatencies.length > 0
-                        ? validLatencies.reduce((sum, val) => sum + val, 0) / validLatencies.length
-                        : null;
-                    aggregated.latency.push(avgLatency);
                 });
 
                 return aggregated;
@@ -2052,8 +1990,7 @@
                 let filtered = {
                     timestamps: history.timestamps.slice(startIdx),
                     rx: history.rx.slice(startIdx),
-                    tx: history.tx.slice(startIdx),
-                    latency: history.latency.slice(startIdx)
+                    tx: history.tx.slice(startIdx)
                 };
 
                 // Apply aggregation for longer time ranges
@@ -2153,105 +2090,6 @@
                 this.metricsCharts.throughput = new uPlot(opts, chartData, chartDiv);
             },
 
-            renderLatencyChart(data) {
-                const chartDiv = document.getElementById('latency-chart');
-                if (!chartDiv) return;
-
-                // Detect spikes and create spike markers
-                const spikes = [];
-                data.latency.forEach((latency, idx) => {
-                    if (latency !== null && latency !== undefined) {
-                        if (latency > 1500) {
-                            spikes.push({ idx, severity: 'critical', value: latency });
-                        } else if (latency > 800) {
-                            spikes.push({ idx, severity: 'warning', value: latency });
-                        }
-                    }
-                });
-
-                // Calculate auto-scaling Y-axis for latency
-                const validLatencies = data.latency.filter(l => l !== null && l !== undefined);
-                const maxLatency = validLatencies.length > 0 ? Math.max(...validLatencies) : 200;
-                const yMax = Math.min(Math.max(maxLatency * 1.2, 200), 2000);  // Clamp between 200ms and 2000ms
-
-                const chartData = [
-                    [...data.timestamps],
-                    [...data.latency]
-                ];
-
-                // Destroy old chart if switching modes or time range
-                if (this.metricsCharts.latency) {
-                    this.metricsCharts.latency.destroy();
-                    this.metricsCharts.latency = null;
-                }
-
-                const opts = {
-                    width: chartDiv.clientWidth - 20,
-                    height: 150,
-                    padding: [10, 10, 10, 0],
-                    series: [
-                        { label: 'Time' },
-                        {
-                            label: 'Latency',
-                            stroke: 'rgb(251, 146, 60)',  // Amber/orange
-                            fill: 'rgba(251, 146, 60, 0.1)',
-                            width: 2,
-                            value: (self, rawValue) => {
-                                if (rawValue == null) return '-';
-                                let status = 'Normal';
-                                if (rawValue > 1500) status = 'Critical';
-                                else if (rawValue > 800) status = 'Warning';
-                                return `${Math.round(rawValue)}ms (${status})`;
-                            },
-                            points: {
-                                show: (self, seriesIdx, dataIdx) => {
-                                    // Show points only for spikes
-                                    return spikes.some(s => s.idx === dataIdx);
-                                },
-                                fill: (self, seriesIdx, dataIdx) => {
-                                    const spike = spikes.find(s => s.idx === dataIdx);
-                                    if (!spike) return 'rgb(251, 146, 60)';
-                                    return spike.severity === 'critical' ? 'rgb(239, 68, 68)' : 'rgb(234, 179, 8)';
-                                },
-                                size: 8
-                            }
-                        }
-                    ],
-                    scales: {
-                        y: {
-                            range: [0, yMax]
-                        }
-                    },
-                    axes: [
-                        { show: false },  // X-axis
-                        {  // Y-axis (milliseconds)
-                            stroke: '#9ca3af',
-                            grid: {
-                                stroke: 'rgba(71, 85, 105, 0.3)',  // Subtle gridlines
-                                width: 1
-                            },
-                            values: (self, ticks) => ticks.map(v => Math.round(v) + 'ms'),
-                            size: 60
-                        }
-                    ],
-                    legend: { show: false },
-                    cursor: {
-                        drag: { x: false, y: false },
-                        focus: { prox: 30 },
-                        points: {
-                            size: 6,
-                            width: 1.5
-                        },
-                        sync: {
-                            key: 'metrics',
-                            setSeries: true
-                        }
-                    }
-                };
-
-                this.metricsCharts.latency = new uPlot(opts, chartData, chartDiv);
-            },
-
             // Helper methods for summary cards
             getCurrentDownloadRate() {
                 const connection = this.vpnStatus.connections?.find(c => c.region_id === this.selectedEndpoint);
@@ -2267,15 +2105,6 @@
                 const history = this.metricsData[connection.interface];
                 if (!history || history.tx.length === 0) return '-';
                 return this.formatBytes(history.tx[history.tx.length - 1]) + '/s';
-            },
-
-            getCurrentLatency() {
-                const connection = this.vpnStatus.connections?.find(c => c.region_id === this.selectedEndpoint);
-                if (!connection) return '-';
-                const history = this.metricsData[connection.interface];
-                if (!history || history.latency.length === 0) return '-';
-                const latency = history.latency[history.latency.length - 1];
-                return latency ? latency + 'ms' : '-';
             },
 
             // Average calculation methods for summary stats
@@ -2306,36 +2135,6 @@
                 const sum = filteredData.tx.reduce((acc, val) => acc + val, 0);
                 const avg = sum / filteredData.tx.length;
                 return this.formatBytes(avg) + '/s';
-            },
-
-            getAverageLatency() {
-                const connection = this.vpnStatus.connections?.find(c => c.region_id === this.selectedEndpoint);
-                if (!connection) return '-';
-                const history = this.metricsData[connection.interface];
-                if (!history || history.latency.length === 0) return '-';
-
-                const filteredData = this.filterDataByTimeRange(history);
-                const validLatencies = filteredData.latency.filter(l => l !== null && l !== undefined);
-                if (validLatencies.length === 0) return '-';
-
-                const sum = validLatencies.reduce((acc, val) => acc + val, 0);
-                const avg = Math.round(sum / validLatencies.length);
-                return avg + 'ms';
-            },
-
-            getLatencyColor() {
-                const connection = this.vpnStatus.connections?.find(c => c.region_id === this.selectedEndpoint);
-                if (!connection) return 'text-slate-400';
-                const history = this.metricsData[connection.interface];
-                if (!history || history.latency.length === 0) return 'text-slate-400';
-
-                const latency = history.latency[history.latency.length - 1];
-                if (!latency) return 'text-slate-400';
-
-                // Color thresholds: green (<200ms), yellow (200-800ms), red (>=800ms)
-                if (latency < 200) return 'text-green-400';
-                if (latency < 800) return 'text-yellow-400';
-                return 'text-red-400';
             },
 
             hasMetricsData() {
