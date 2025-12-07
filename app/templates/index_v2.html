@@ -279,8 +279,8 @@
 
     <!-- Endpoint Pills (80px) -->
     <div class="bg-slate-900 border-b border-slate-800 px-6 py-3">
-        <div class="flex items-center space-x-3 overflow-x-auto">
-            <span class="text-sm text-slate-400 flex-shrink-0">Filter:</span>
+        <div class="flex items-start space-x-3 flex-wrap gap-y-2">
+            <span class="text-sm text-slate-400 flex-shrink-0 leading-10">Filter:</span>
 
             <!-- All Endpoints Pill -->
             <div
@@ -932,6 +932,7 @@
 
                     // Check for overlaps and adjust radius if needed
                     let hasOverlap = false;
+                    const endpointList = Object.values(endpointNodes);
 
                     for (const meshNode of potentialDeviceNodes) {
                         for (const endpoint of endpointList) {
