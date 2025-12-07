@@ -1605,14 +1605,41 @@
                     nodes.filter(n => n.type === 'endpoint').forEach(node => {
                         const position = this.findBestLabelPosition(node, node.label, allCircles, placedLabels);
 
-                        const label = labelsLayer.append('text')
-                            .attr('class', 'endpoint-label')
-                            .attr('x', position.x)
-                            .attr('y', position.y)
-                            .attr('text-anchor', position.anchor)
-                            .classed('dimmed', isFiltered && this.selectedEndpoint !== node.region_id)
-                            .style('font-size', position.reducedFont ? '10px' : '12px')
-                            .text(node.label);
+                        if (node.isGroup && node.cities && node.cities.length > 0) {
+                            // Multi-line label for grouped endpoints: Country name + cities below
+                            const labelGroup = labelsLayer.append('g')
+                                .attr('class', 'endpoint-label-group')
+                                .classed('dimmed', isFiltered && this.selectedEndpoint !== node.region_id);
+
+                            // Country name (bold)
+                            labelGroup.append('text')
+                                .attr('x', position.x)
+                                .attr('y', position.y)
+                                .attr('text-anchor', position.anchor)
+                                .style('font-size', '12px')
+                                .style('font-weight', 'bold')
+                                .style('fill', 'white')
+                                .text(node.countryName);
+
+                            // Cities below (smaller, lighter)
+                            labelGroup.append('text')
+                                .attr('x', position.x)
+                                .attr('y', position.y + 14)  // 14px below country name
+                                .attr('text-anchor', position.anchor)
+                                .style('font-size', '10px')
+                                .style('fill', '#94a3b8')
+                                .text(node.cities.join(', '));
+                        } else {
+                            // Single-line label for single endpoints
+                            labelsLayer.append('text')
+                                .attr('class', 'endpoint-label')
+                                .attr('x', position.x)
+                                .attr('y', position.y)
+                                .attr('text-anchor', position.anchor)
+                                .classed('dimmed', isFiltered && this.selectedEndpoint !== node.region_id)
+                                .style('font-size', position.reducedFont ? '10px' : '12px')
+                                .text(node.label);
+                        }
 
                         // Add leader line if label was repositioned far from marker
                         if (position.needsLeaderLine) {
