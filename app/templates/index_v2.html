@@ -685,6 +685,10 @@
                 },
 
                 async refreshStatus() {
+                    // Store previous state to detect actual changes
+                    const prevConnectionCount = this.vpnStatus.connections?.length || 0;
+                    const prevDeviceCount = this.devices?.length || 0;
+
                     await Promise.all([
                         this.loadVPNStatus(),
                         this.loadTailscaleStatus(),
@@ -692,9 +696,15 @@
                         this.loadDevices()
                     ]);
 
-                    this.$nextTick(() => {
-                        this.updateTopologyGraph();
-                    });
+                    // Only update topology if topology actually changed (avoid GPU-heavy redraws)
+                    const connectionCountChanged = (this.vpnStatus.connections?.length || 0) !== prevConnectionCount;
+                    const deviceCountChanged = (this.devices?.length || 0) !== prevDeviceCount;
+
+                    if (connectionCountChanged || deviceCountChanged) {
+                        this.$nextTick(() => {
+                            this.updateTopologyGraph();
+                        });
+                    }
                 },
 
                 async loadVPNStatus() {
