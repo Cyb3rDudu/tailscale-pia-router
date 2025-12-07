@@ -2,386 +2,265 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>PIA Router</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIA Router - Topology View</title>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-        /* Custom animations */
-        @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-            50% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2); }
-        }
-        .endpoint-pill.active {
-            animation: pulse-glow 2s infinite;
+        /* Prevent scrolling on main viewport */
+        html, body {
+            overflow-x: hidden;
+            max-width: 100vw;
         }
 
-        /* Smooth transitions */
-        .endpoint-pill, .device-card {
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        /* Graph styles */
+        .network-link-mesh {
+            stroke: #475569;
+            stroke-width: 1;
+            stroke-dasharray: 4 4;
+            fill: none;
+            opacity: 0.4;
+        }
+        .network-link-vpn {
+            stroke: #3b82f6;
+            stroke-width: 2;
+            fill: none;
+            opacity: 0.8;
+        }
+        .network-link-vpn.animated {
+            stroke-dasharray: 5 5;
+            animation: dash 1s linear infinite;
+        }
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -10;
+            }
+        }
+        .network-node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .network-node:hover {
+            filter: brightness(1.2);
+        }
+        .network-node.selected {
+            filter: brightness(1.3);
         }
 
+        /* Device table styles */
+        .device-table {
+            font-size: 14px;
+        }
+        .device-row {
+            height: 40px;
+            transition: background-color 0.2s ease;
+        }
+        .device-row:hover {
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+        .device-row.selected {
+            background-color: rgba(59, 130, 246, 0.2);
+        }
+
+        /* Endpoint pill styles */
+        .endpoint-pill {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
         .endpoint-pill:hover {
             transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .endpoint-pill.active {
+            background-color: rgba(59, 130, 246, 0.2);
+            border-color: #3b82f6;
         }
 
-        /* Custom scrollbar */
-        .custom-scrollbar::-webkit-scrollbar {
+        /* Compact status indicators */
+        .status-dot {
             width: 8px;
             height: 8px;
+            border-radius: 50%;
         }
-        .custom-scrollbar::-webkit-scrollbar-track {
+
+        /* Graph container */
+        #topology-graph {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            border-radius: 8px;
+        }
+
+        /* Custom scrollbar for device table */
+        .device-table-container::-webkit-scrollbar {
+            width: 6px;
+        }
+        .device-table-container::-webkit-scrollbar-track {
             background: #1e293b;
         }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
+        .device-table-container::-webkit-scrollbar-thumb {
             background: #475569;
-            border-radius: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #64748b;
+            border-radius: 3px;
         }
     </style>
 </head>
 <body class="bg-slate-900 text-slate-100" x-data="app()" x-init="init()">
-    <div class="min-h-screen flex flex-col">
-        <!-- Header -->
-        <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-50">
-            <div class="max-w-7xl mx-auto px-6 py-4">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center space-x-8">
-                        <h1 class="text-2xl font-semibold text-slate-100">PIA Router</h1>
-
-                        <!-- Status Badges -->
-                        <div class="hidden md:flex items-center space-x-6">
-                            <div class="flex flex-col">
-                                <span class="text-xs text-slate-400">VPN Endpoints</span>
-                                <div class="flex items-center space-x-2 mt-1">
-                                    <div :class="vpnStatus.active_count > 0 ? 'bg-green-500' : 'bg-slate-500'"
-                                         class="w-2 h-2 rounded-full"></div>
-                                    <span class="text-sm font-medium">
-                                        <span x-text="vpnStatus.active_count"></span> active
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div class="flex flex-col">
-                                <span class="text-xs text-slate-400">Tailscale</span>
-                                <div class="flex items-center space-x-2 mt-1">
-                                    <div :class="tailscaleStatus.running ? 'bg-green-500' : 'bg-red-500'"
-                                         class="w-2 h-2 rounded-full"></div>
-                                    <span class="text-sm font-medium" x-text="tailscaleStatus.running ? 'Connected' : 'Disconnected'"></span>
-                                </div>
-                            </div>
-
-                            <div class="flex flex-col">
-                                <span class="text-xs text-slate-400">Devices Routed</span>
-                                <div class="flex items-center space-x-2 mt-1">
-                                    <span class="text-sm font-medium">
-                                        <span x-text="devices.filter(d => d.region_id).length"></span> / <span x-text="devices.length"></span>
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <a href="/settings" class="text-sm text-blue-400 hover:text-blue-300 font-medium">
-                        Settings
-                    </a>
+    <!-- Header (60px) -->
+    <header class="bg-slate-800 border-b border-slate-700 px-6 py-3">
+        <div class="flex items-center justify-between">
+            <h1 class="text-xl font-bold text-white">PIA Router - Topology View</h1>
+            <div class="flex items-center space-x-6">
+                <!-- Compact Status Indicators -->
+                <div class="flex items-center space-x-2">
+                    <div :class="vpnStatus.active_count > 0 ? 'bg-green-500' : 'bg-slate-500'" class="status-dot"></div>
+                    <span class="text-sm text-slate-300"><span x-text="vpnStatus.active_count"></span> VPN</span>
                 </div>
+                <div class="flex items-center space-x-2">
+                    <div :class="tailscaleStatus.running ? 'bg-green-500' : 'bg-red-500'" class="status-dot"></div>
+                    <span class="text-sm text-slate-300">Tailscale</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <div :class="systemHealth.healthy ? 'bg-green-500' : 'bg-yellow-500'" class="status-dot"></div>
+                    <span class="text-sm text-slate-300">System</span>
+                </div>
+                <a href="/settings" class="text-blue-400 hover:text-blue-300 text-sm font-medium">Settings</a>
+                <a href="/" class="text-slate-400 hover:text-slate-300 text-sm">Classic View</a>
             </div>
-        </header>
+        </div>
+    </header>
 
-        <main class="flex-1 max-w-7xl mx-auto w-full px-6 py-6">
-            <!-- Endpoint Status Pills Section -->
-            <section class="mb-6">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold text-slate-100">VPN Endpoints</h2>
-                    <span class="text-sm text-slate-400" x-text="`${vpnStatus.active_count} active, ${vpnStatus.connections ? vpnStatus.connections.length - vpnStatus.active_count : 0} inactive`"></span>
+    <!-- Endpoint Pills (80px) -->
+    <div class="bg-slate-800 border-b border-slate-700 px-6 py-3">
+        <div class="flex items-center space-x-3 overflow-x-auto">
+            <span class="text-sm text-slate-400 flex-shrink-0">Active Endpoints:</span>
+            <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
+                <div
+                    class="endpoint-pill flex items-center space-x-3 bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 flex-shrink-0"
+                    :class="selectedEndpoint === conn.region_id ? 'active' : ''"
+                    @click="toggleEndpointFilter(conn.region_id)">
+                    <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                    <span class="font-medium text-white" x-text="conn.region_name"></span>
+                    <span class="text-slate-400 text-sm">
+                        <span x-text="devices.filter(d => d.region_id === conn.region_id && d.routing_enabled).length"></span> devices
+                    </span>
                 </div>
-
-                <div class="space-y-2">
-                    <!-- Active Endpoints -->
-                    <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
-                        <div class="endpoint-pill active bg-slate-800 border rounded-lg px-4 py-3 flex items-center justify-between hover:bg-slate-700 cursor-pointer"
-                             :class="conn.interface ? 'border-green-600/50 bg-green-900/10' : 'border-slate-700'"
-                             @click="selectedEndpoint = selectedEndpoint === conn.region_id ? null : conn.region_id">
-
-                            <div class="flex items-center space-x-4 flex-1">
-                                <!-- Status Indicator -->
-                                <div class="flex items-center space-x-2">
-                                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
-                                    <span class="font-medium text-slate-100" x-text="conn.region_name"></span>
-                                </div>
-
-                                <!-- Device Count -->
-                                <div class="flex items-center space-x-1 text-sm">
-                                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                              d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-                                    </svg>
-                                    <span class="text-slate-400">
-                                        <span x-text="devices.filter(d => d.region_id === conn.region_id).length"></span> devices
-                                    </span>
-                                </div>
-
-                                <!-- Latency (from last handshake) -->
-                                <div class="text-sm text-slate-400" x-show="conn.last_handshake">
-                                    <span x-text="conn.last_handshake"></span>
-                                </div>
-
-                                <!-- Throughput -->
-                                <div class="flex items-center space-x-3 text-sm">
-                                    <span class="text-green-400">
-                                        ↓ <span x-text="formatRate(getCurrentRate(conn.interface, 'rx'))"></span>
-                                    </span>
-                                    <span class="text-blue-400">
-                                        ↑ <span x-text="formatRate(getCurrentRate(conn.interface, 'tx'))"></span>
-                                    </span>
-                                </div>
-                            </div>
-
-                            <!-- Expand Toggle -->
-                            <div class="ml-4">
-                                <svg class="w-5 h-5 text-slate-400 transition-transform"
-                                     :class="selectedEndpoint === conn.region_id ? 'rotate-180' : ''"
-                                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                                </svg>
-                            </div>
-                        </div>
-                    </template>
-
-                    <!-- No Active Endpoints Message -->
-                    <div x-show="!vpnStatus.connections || vpnStatus.connections.length === 0"
-                         class="bg-slate-800 border border-slate-700 rounded-lg px-4 py-8 text-center">
-                        <p class="text-slate-400">No active VPN endpoints</p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Device Routing Section -->
-            <section class="flex-1">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-lg font-semibold text-slate-100">Device Routing</h2>
-                    <div class="flex items-center space-x-3">
-                        <input type="text"
-                               placeholder="Search devices..."
-                               x-model="deviceSearch"
-                               class="px-3 py-1.5 text-sm bg-slate-800 border border-slate-700 rounded-md text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                    </div>
-                </div>
-
-                <div class="space-y-4 custom-scrollbar" style="max-height: calc(100vh - 400px); overflow-y: auto;">
-                    <!-- Devices Grouped by Endpoint -->
-                    <template x-for="conn in vpnStatus.connections" :key="'group-' + conn.region_id">
-                        <div x-show="devices.filter(d => d.region_id === conn.region_id && (!deviceSearch || d.hostname.toLowerCase().includes(deviceSearch.toLowerCase()))).length > 0">
-                            <!-- Group Header -->
-                            <details class="group" open>
-                                <summary class="flex items-center justify-between px-4 py-2 bg-slate-800/50 border border-slate-700 rounded-lg cursor-pointer hover:bg-slate-800 mb-2">
-                                    <div class="flex items-center space-x-3">
-                                        <svg class="w-4 h-4 text-slate-400 transition-transform group-open:rotate-90"
-                                             fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-                                        </svg>
-                                        <span class="font-medium text-slate-200" x-text="conn.region_name"></span>
-                                        <span class="text-sm text-slate-400">
-                                            (<span x-text="devices.filter(d => d.region_id === conn.region_id).length"></span>)
-                                        </span>
-                                    </div>
-                                </summary>
-
-                                <!-- Device Cards -->
-                                <div class="mt-2 space-y-2">
-                                    <template x-for="device in devices.filter(d => d.region_id === conn.region_id && (!deviceSearch || d.hostname.toLowerCase().includes(deviceSearch.toLowerCase())))" :key="device.id">
-                                        <div class="device-card bg-slate-800 border border-slate-700 border-l-4 rounded-lg px-4 py-3 hover:bg-slate-700"
-                                             :class="device.routing_enabled ? 'border-l-green-500' : 'border-l-slate-500'">
-                                            <div class="flex items-center justify-between">
-                                                <!-- Device Info -->
-                                                <div class="flex items-center space-x-4 flex-1">
-                                                    <!-- Device Icon -->
-                                                    <div class="text-2xl">
-                                                        <span x-text="getDeviceIcon(device.os)"></span>
-                                                    </div>
-
-                                                    <!-- Device Details -->
-                                                    <div class="flex-1">
-                                                        <div class="flex items-center space-x-2">
-                                                            <span class="font-medium text-slate-100" x-text="device.hostname"></span>
-                                                            <span :class="device.online ? 'bg-green-500' : 'bg-slate-500'"
-                                                                  class="px-2 py-0.5 text-xs rounded-full">
-                                                                <span x-text="device.online ? 'Online' : 'Offline'"></span>
-                                                            </span>
-                                                        </div>
-                                                        <div class="flex items-center space-x-4 mt-1 text-sm text-slate-400">
-                                                            <span x-text="device.ip_addresses[0]"></span>
-                                                            <span x-text="device.os"></span>
-                                                            <span x-show="device.routing_enabled" class="text-green-400">
-                                                                ● Routing enabled
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <!-- Actions -->
-                                                <div class="flex items-center space-x-2">
-                                                    <!-- Region Dropdown -->
-                                                    <select @change="setDeviceRegion(device.id, $event.target.value)"
-                                                            class="px-3 py-1.5 text-sm bg-slate-700 border border-slate-600 rounded-md text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                                        <template x-for="region in regions" :key="region.id">
-                                                            <option :value="region.id"
-                                                                    :selected="device.region_id === region.id"
-                                                                    x-text="`${region.name} (${region.country})`"></option>
-                                                        </template>
-                                                    </select>
-
-                                                    <!-- Toggle Button -->
-                                                    <button @click="toggleDeviceRouting(device.id)"
-                                                            :disabled="!device.region_id"
-                                                            class="p-2 rounded-full transition-colors"
-                                                            :class="device.routing_enabled ? 'bg-red-900/50 text-red-400 hover:bg-red-900' : 'bg-green-900/50 text-green-400 hover:bg-green-900'"
-                                                            :title="device.routing_enabled ? 'Stop routing' : 'Start routing'">
-                                                        <!-- Play Icon -->
-                                                        <svg x-show="!device.routing_enabled" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                                            <path d="M8 5v14l11-7z"/>
-                                                        </svg>
-                                                        <!-- Stop Icon -->
-                                                        <svg x-show="device.routing_enabled" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                                            <path d="M6 6h12v12H6z"/>
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </template>
-                                </div>
-                            </details>
-                        </div>
-                    </template>
-
-                    <!-- Unrouted Devices Group -->
-                    <div x-show="devices.filter(d => !d.region_id && (!deviceSearch || d.hostname.toLowerCase().includes(deviceSearch.toLowerCase()))).length > 0">
-                        <details class="group" open>
-                            <summary class="flex items-center justify-between px-4 py-2 bg-slate-800/50 border border-slate-700 rounded-lg cursor-pointer hover:bg-slate-800 mb-2">
-                                <div class="flex items-center space-x-3">
-                                    <svg class="w-4 h-4 text-slate-400 transition-transform group-open:rotate-90"
-                                         fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-                                    </svg>
-                                    <span class="font-medium text-slate-200">Direct Connection</span>
-                                    <span class="text-sm text-slate-400">
-                                        (<span x-text="devices.filter(d => !d.region_id).length"></span>)
-                                    </span>
-                                </div>
-                            </summary>
-
-                            <div class="mt-2 space-y-2">
-                                <template x-for="device in devices.filter(d => !d.region_id && (!deviceSearch || d.hostname.toLowerCase().includes(deviceSearch.toLowerCase())))" :key="device.id">
-                                    <div class="device-card bg-slate-800 border border-slate-700 border-l-4 border-l-slate-500 rounded-lg px-4 py-3 hover:bg-slate-700">
-                                        <div class="flex items-center justify-between">
-                                            <div class="flex items-center space-x-4 flex-1">
-                                                <div class="text-2xl">
-                                                    <span x-text="getDeviceIcon(device.os)"></span>
-                                                </div>
-
-                                                <div class="flex-1">
-                                                    <div class="flex items-center space-x-2">
-                                                        <span class="font-medium text-slate-100" x-text="device.hostname"></span>
-                                                        <span :class="device.online ? 'bg-green-500' : 'bg-slate-500'"
-                                                              class="px-2 py-0.5 text-xs rounded-full">
-                                                            <span x-text="device.online ? 'Online' : 'Offline'"></span>
-                                                        </span>
-                                                    </div>
-                                                    <div class="flex items-center space-x-4 mt-1 text-sm text-slate-400">
-                                                        <span x-text="device.ip_addresses[0]"></span>
-                                                        <span x-text="device.os"></span>
-                                                        <span class="text-slate-500">● Not routed</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div class="flex items-center space-x-2">
-                                                <select @change="setDeviceRegion(device.id, $event.target.value)"
-                                                        class="px-3 py-1.5 text-sm bg-slate-700 border border-slate-600 rounded-md text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                                    <option value="">Select region...</option>
-                                                    <template x-for="region in regions" :key="region.id">
-                                                        <option :value="region.id" x-text="`${region.name} (${region.country})`"></option>
-                                                    </template>
-                                                </select>
-
-                                                <button @click="toggleDeviceRouting(device.id)"
-                                                        disabled
-                                                        class="p-2 rounded-full bg-slate-700 text-slate-500 cursor-not-allowed"
-                                                        title="Select a region first">
-                                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                                        <path d="M8 5v14l11-7z"/>
-                                                    </svg>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </template>
-                            </div>
-                        </details>
-                    </div>
-                </div>
-            </section>
-        </main>
+            </template>
+            <div x-show="vpnStatus.connections.length === 0" class="text-slate-500 text-sm">No active VPN connections</div>
+        </div>
     </div>
 
-    <script>
-        // Store charts and history outside Alpine
-        const globalCharts = {};
-        const globalTransferHistory = {};
+    <!-- Main Content: Split View (Graph 60% + Table 40%) -->
+    <main class="px-6 py-4" style="height: calc(100vh - 140px);">
+        <div class="flex space-x-4 h-full">
+            <!-- LEFT: Topology Graph (60% width) -->
+            <div class="w-3/5 flex-shrink-0">
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4 h-full flex flex-col">
+                    <h2 class="text-lg font-semibold text-white mb-3">Network Topology</h2>
+                    <div id="topology-graph" class="flex-1 min-h-0"></div>
+                </div>
+            </div>
 
+            <!-- RIGHT: Device Routing Table (40% width) -->
+            <div class="w-2/5 flex-shrink-0">
+                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4 h-full flex flex-col">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-semibold text-white">Device Routing</h2>
+                        <span class="text-sm text-slate-400"><span x-text="devices.length"></span> devices</span>
+                    </div>
+
+                    <!-- Scrollable table container -->
+                    <div class="device-table-container flex-1 min-h-0 overflow-y-auto">
+                        <table class="device-table w-full">
+                            <thead class="sticky top-0 bg-slate-700 text-slate-300 text-xs uppercase">
+                                <tr>
+                                    <th class="px-3 py-2 text-left">Device</th>
+                                    <th class="px-3 py-2 text-left">IP</th>
+                                    <th class="px-3 py-2 text-left">Region</th>
+                                    <th class="px-3 py-2 text-center">Route</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="device in filteredDevices" :key="device.id">
+                                    <tr
+                                        class="device-row border-b border-slate-700"
+                                        :class="selectedDevice === device.id ? 'selected' : ''"
+                                        @click="selectDevice(device.id)">
+                                        <td class="px-3 py-2">
+                                            <div class="flex items-center space-x-2">
+                                                <div :class="device.online ? 'bg-green-500' : 'bg-slate-500'" class="w-2 h-2 rounded-full"></div>
+                                                <span class="font-medium text-white truncate" x-text="device.hostname"></span>
+                                            </div>
+                                        </td>
+                                        <td class="px-3 py-2 text-slate-400 text-sm" x-text="device.ip_addresses[0]"></td>
+                                        <td class="px-3 py-2">
+                                            <select
+                                                @click.stop
+                                                @change="setDeviceRegion(device.id, $event.target.value)"
+                                                class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white w-full"
+                                                :value="device.region_id || ''">
+                                                <option value="">No VPN</option>
+                                                <template x-for="region in regions" :key="region.id">
+                                                    <option :value="region.id" x-text="`${region.name} (${region.country})`"></option>
+                                                </template>
+                                            </select>
+                                        </td>
+                                        <td class="px-3 py-2 text-center">
+                                            <button
+                                                @click.stop="toggleDeviceRouting(device.id)"
+                                                :disabled="!device.region_id"
+                                                class="w-8 h-8 rounded-full transition-colors"
+                                                :class="device.routing_enabled ? 'bg-red-600 hover:bg-red-700' : (device.region_id ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-600 cursor-not-allowed')"
+                                                :title="device.routing_enabled ? 'Stop routing' : (device.region_id ? 'Start routing' : 'Select region first')">
+                                                <!-- Play Icon -->
+                                                <svg x-show="!device.routing_enabled" class="w-4 h-4 mx-auto" fill="currentColor" viewBox="0 0 24 24">
+                                                    <path d="M8 5v14l11-7z"/>
+                                                </svg>
+                                                <!-- Stop Icon -->
+                                                <svg x-show="device.routing_enabled" class="w-4 h-4 mx-auto" fill="currentColor" viewBox="0 0 24 24">
+                                                    <path d="M6 6h12v12H6z"/>
+                                                </svg>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                        <div x-show="devices.length === 0" class="text-center py-8 text-slate-500">
+                            No devices found
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
         function app() {
             return {
                 loading: false,
                 vpnStatus: { active_count: 0, connections: [] },
-                tailscaleStatus: { running: false },
-                systemHealth: { healthy: false },
+                tailscaleStatus: { running: false, exit_node_enabled: false, hostname: null },
+                systemHealth: { healthy: false, messages: [] },
                 regions: [],
                 devices: [],
                 selectedEndpoint: null,
-                deviceSearch: '',
+                selectedDevice: null,
                 pollInterval: null,
-                websocket: null,
+                networkGraph: null,
+
+                get filteredDevices() {
+                    if (!this.selectedEndpoint) return this.devices;
+                    return this.devices.filter(d => d.region_id === this.selectedEndpoint);
+                },
 
                 async init() {
                     await this.loadRegions();
                     await this.refreshStatus();
+                    this.initTopologyGraph();
 
-                    this.connectWebSocket();
-
+                    // Poll status every 5 seconds
                     this.pollInterval = setInterval(() => {
-                        this.loadTailscaleStatus();
-                        this.loadSystemHealth();
-                        this.loadDevices();
+                        this.refreshStatus();
                     }, 5000);
-                },
-
-                connectWebSocket() {
-                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-                    const wsUrl = `${protocol}//${window.location.host}/api/status/ws/vpn-status`;
-
-                    this.websocket = new WebSocket(wsUrl);
-
-                    this.websocket.onmessage = (event) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            this.vpnStatus = {
-                                active_count: data.active_count,
-                                connections: data.connections
-                            };
-                        } catch (error) {
-                            console.error('Failed to parse WebSocket message:', error);
-                        }
-                    };
-
-                    this.websocket.onclose = () => {
-                        setTimeout(() => this.connectWebSocket(), 3000);
-                    };
                 },
 
                 async loadRegions() {
@@ -401,6 +280,10 @@
                         this.loadSystemHealth(),
                         this.loadDevices()
                     ]);
+
+                    this.$nextTick(() => {
+                        this.updateTopologyGraph();
+                    });
                 },
 
                 async loadVPNStatus() {
@@ -409,6 +292,7 @@
                         this.vpnStatus = await response.json();
                     } catch (error) {
                         console.error('Failed to load VPN status:', error);
+                        this.vpnStatus = { active_count: 0, connections: [] };
                     }
                 },
 
@@ -448,12 +332,15 @@
                             body: JSON.stringify({ region_id: regionId || null })
                         });
 
-                        if (response.ok) {
-                            await this.loadDevices();
-                            await this.loadVPNStatus();
+                        if (!response.ok) {
+                            const error = await response.json();
+                            alert('Failed to set device region: ' + error.detail);
                         }
+
+                        await this.loadDevices();
+                        await this.loadVPNStatus();
                     } catch (error) {
-                        console.error('Failed to set device region:', error);
+                        alert('Failed to set device region: ' + error.message);
                     }
                 },
 
@@ -465,47 +352,245 @@
                             body: JSON.stringify({})
                         });
 
-                        if (response.ok) {
-                            await this.loadDevices();
-                            await this.loadVPNStatus();
+                        if (!response.ok) {
+                            const error = await response.json();
+                            alert('Failed to toggle device routing: ' + error.detail);
                         }
+
+                        await this.loadDevices();
+                        await this.loadVPNStatus();
                     } catch (error) {
-                        console.error('Failed to toggle device routing:', error);
+                        alert('Failed to toggle device routing: ' + error.message);
                     }
                 },
 
-                getCurrentRate(interface_name, direction) {
-                    const history = globalTransferHistory[interface_name];
-                    if (!history || !history[direction] || history[direction].length === 0) {
-                        return 0;
+                toggleEndpointFilter(regionId) {
+                    if (this.selectedEndpoint === regionId) {
+                        this.selectedEndpoint = null;
+                    } else {
+                        this.selectedEndpoint = regionId;
                     }
-                    return history[direction][history[direction].length - 1];
+                    this.$nextTick(() => {
+                        this.updateTopologyGraph();
+                    });
                 },
 
-                formatRate(bytesPerSecond) {
-                    return formatBytes(bytesPerSecond) + '/s';
+                selectDevice(deviceId) {
+                    if (this.selectedDevice === deviceId) {
+                        this.selectedDevice = null;
+                    } else {
+                        this.selectedDevice = deviceId;
+                    }
+                    this.$nextTick(() => {
+                        this.updateTopologyGraph();
+                    });
                 },
 
-                getDeviceIcon(os) {
-                    const icons = {
-                        'macOS': '💻',
-                        'iOS': '📱',
-                        'linux': '🖥️',
-                        'Linux': '🖥️',
-                        'Windows': '💻',
-                        'Android': '📱'
-                    };
-                    return icons[os] || '🖥️';
+                initTopologyGraph() {
+                    const container = document.getElementById('topology-graph');
+                    if (!container) return;
+
+                    const width = container.clientWidth;
+                    const height = container.clientHeight;
+
+                    // Clear any existing SVG
+                    d3.select('#topology-graph').selectAll('svg').remove();
+
+                    // Create SVG
+                    const svg = d3.select('#topology-graph')
+                        .append('svg')
+                        .attr('width', width)
+                        .attr('height', height)
+                        .attr('viewBox', [0, 0, width, height]);
+
+                    // Create groups for links and nodes
+                    const linkGroup = svg.append('g').attr('class', 'links');
+                    const nodeGroup = svg.append('g').attr('class', 'nodes');
+
+                    this.networkGraph = { svg, linkGroup, nodeGroup, width, height };
+                },
+
+                updateTopologyGraph() {
+                    if (!this.networkGraph) return;
+
+                    const { svg, linkGroup, nodeGroup, width, height } = this.networkGraph;
+
+                    // Build graph data with FIXED positions
+                    const nodes = [];
+                    const links = [];
+                    const centerX = width / 2;
+                    const centerY = height / 2;
+                    const meshRadius = Math.min(width, height) * 0.3;
+
+                    // Position PIA exit nodes on left and right
+                    const piaNodes = {};
+                    const leftPiaNodes = [];
+                    const rightPiaNodes = [];
+
+                    this.vpnStatus.connections.forEach((conn, idx) => {
+                        const nodeId = `pia-${conn.region_id}`;
+                        const isLeft = idx % 2 === 0;
+                        const side = isLeft ? leftPiaNodes : rightPiaNodes;
+
+                        const piaNode = {
+                            id: nodeId,
+                            label: conn.region_name,
+                            type: 'pia',
+                            region_id: conn.region_id,
+                            isLeft: isLeft,
+                            sideIndex: side.length
+                        };
+
+                        side.push(piaNode);
+                        nodes.push(piaNode);
+                        piaNodes[conn.region_id] = piaNode;
+                    });
+
+                    // Position left PIA nodes
+                    leftPiaNodes.forEach((node, idx) => {
+                        node.x = 80;
+                        node.y = centerY + (idx - (leftPiaNodes.length - 1) / 2) * 80;
+                    });
+
+                    // Position right PIA nodes
+                    rightPiaNodes.forEach((node, idx) => {
+                        node.x = width - 80;
+                        node.y = centerY + (idx - (rightPiaNodes.length - 1) / 2) * 80;
+                    });
+
+                    // Order devices intelligently
+                    const leftSideDevices = [];
+                    const rightSideDevices = [];
+                    const unroutedDevices = [];
+
+                    this.devices.forEach(device => {
+                        if (device.region_id && piaNodes[device.region_id]) {
+                            const piaNode = piaNodes[device.region_id];
+                            if (piaNode.isLeft) {
+                                leftSideDevices.push(device);
+                            } else {
+                                rightSideDevices.push(device);
+                            }
+                        } else {
+                            unroutedDevices.push(device);
+                        }
+                    });
+
+                    const orderedDevices = [...leftSideDevices, ...unroutedDevices, ...rightSideDevices];
+
+                    // Position devices in a ring
+                    const deviceCount = orderedDevices.length;
+                    orderedDevices.forEach((device, idx) => {
+                        const angle = (idx / deviceCount) * 2 * Math.PI - Math.PI / 2;
+
+                        nodes.push({
+                            id: `device-${device.id}`,
+                            label: device.hostname,
+                            type: 'device',
+                            online: device.online,
+                            region_id: device.region_id,
+                            device_id: device.id,
+                            routing_enabled: device.routing_enabled,
+                            x: centerX + meshRadius * Math.cos(angle),
+                            y: centerY + meshRadius * Math.sin(angle)
+                        });
+                    });
+
+                    // Add VPN connections (render first, behind mesh)
+                    const deviceNodes = nodes.filter(n => n.type === 'device');
+                    deviceNodes.forEach(deviceNode => {
+                        if (deviceNode.region_id && deviceNode.routing_enabled) {
+                            const piaNode = piaNodes[deviceNode.region_id];
+                            if (piaNode) {
+                                links.push({
+                                    source: deviceNode,
+                                    target: piaNode,
+                                    type: 'vpn'
+                                });
+                            }
+                        }
+                    });
+
+                    // Add mesh connections (render last, on top)
+                    for (let i = 0; i < deviceNodes.length; i++) {
+                        for (let j = i + 1; j < deviceNodes.length; j++) {
+                            links.push({
+                                source: deviceNodes[i],
+                                target: deviceNodes[j],
+                                type: 'mesh'
+                            });
+                        }
+                    }
+
+                    // Update links
+                    const link = linkGroup.selectAll('line')
+                        .data(links, d => `${d.source.id}-${d.target.id}`);
+
+                    link.exit().remove();
+
+                    const linkEnter = link.enter()
+                        .append('line')
+                        .attr('class', d => d.type === 'mesh' ? 'network-link-mesh' : 'network-link-vpn animated');
+
+                    linkEnter.merge(link)
+                        .attr('x1', d => d.source.x)
+                        .attr('y1', d => d.source.y)
+                        .attr('x2', d => d.target.x)
+                        .attr('y2', d => d.target.y);
+
+                    // Update nodes
+                    const node = nodeGroup.selectAll('g')
+                        .data(nodes, d => d.id);
+
+                    node.exit().remove();
+
+                    const nodeEnter = node.enter()
+                        .append('g')
+                        .attr('class', 'network-node')
+                        .on('click', (event, d) => {
+                            if (d.type === 'device') {
+                                this.selectDevice(d.device_id);
+                            } else if (d.type === 'pia') {
+                                this.toggleEndpointFilter(d.region_id);
+                            }
+                        });
+
+                    nodeEnter.append('circle')
+                        .attr('r', d => d.type === 'pia' ? 20 : 16);
+
+                    nodeEnter.append('text')
+                        .attr('dy', 30)
+                        .attr('text-anchor', 'middle')
+                        .attr('class', 'text-white')
+                        .style('font-size', '10px')
+                        .style('font-weight', '500');
+
+                    const allNodes = nodeEnter.merge(node);
+
+                    allNodes
+                        .attr('transform', d => `translate(${d.x},${d.y})`)
+                        .classed('selected', d => {
+                            if (d.type === 'device') {
+                                return this.selectedDevice === d.device_id ||
+                                       (this.selectedEndpoint && d.region_id === this.selectedEndpoint);
+                            } else if (d.type === 'pia') {
+                                return this.selectedEndpoint === d.region_id;
+                            }
+                            return false;
+                        });
+
+                    allNodes.select('circle')
+                        .attr('fill', d => {
+                            if (d.type === 'pia') return '#22c55e';
+                            return d.online ? '#3b82f6' : '#6b7280';
+                        })
+                        .attr('stroke', '#fff')
+                        .attr('stroke-width', 2);
+
+                    allNodes.select('text')
+                        .text(d => d.label.length > 12 ? d.label.substring(0, 12) + '...' : d.label);
                 }
             }
-        }
-
-        function formatBytes(bytes) {
-            if (bytes === 0) return '0 B';
-            const k = 1024;
-            const sizes = ['B', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
     </script>
 </body>
