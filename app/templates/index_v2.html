@@ -1606,7 +1606,7 @@
                         const position = this.findBestLabelPosition(node, node.label, allCircles, placedLabels);
 
                         if (node.isGroup && node.cities && node.cities.length > 0) {
-                            // Multi-line label for grouped endpoints: Country name + cities below
+                            // Multi-line label for grouped endpoints: Country name + cities as vertical list
                             const labelGroup = labelsLayer.append('g')
                                 .attr('class', 'endpoint-label-group')
                                 .classed('dimmed', isFiltered && this.selectedEndpoint !== node.region_id);
@@ -1621,14 +1621,16 @@
                                 .style('fill', 'white')
                                 .text(node.countryName);
 
-                            // Cities below (smaller, lighter)
-                            labelGroup.append('text')
-                                .attr('x', position.x)
-                                .attr('y', position.y + 14)  // 14px below country name
-                                .attr('text-anchor', position.anchor)
-                                .style('font-size', '10px')
-                                .style('fill', '#94a3b8')
-                                .text(node.cities.join(', '));
+                            // Cities as vertical list (one per line)
+                            node.cities.forEach((city, index) => {
+                                labelGroup.append('text')
+                                    .attr('x', position.x)
+                                    .attr('y', position.y + 14 + (index * 12))  // 14px below country, then 12px per city
+                                    .attr('text-anchor', position.anchor)
+                                    .style('font-size', '10px')
+                                    .style('fill', '#94a3b8')
+                                    .text(city);
+                            });
                         } else {
                             // Single-line label for single endpoints
                             labelsLayer.append('text')
