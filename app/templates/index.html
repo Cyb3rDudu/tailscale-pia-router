@@ -158,19 +158,100 @@
                             <div class="text-xs text-gray-600 dark:text-gray-400">
                                 <span class="font-medium">OS:</span> <span x-text="device.os || 'Unknown'"></span>
                             </div>
-                            <div>
-                                <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">VPN Region</label>
-                                <select
-                                    @change="setDeviceRegion(device.id, $event.target.value)"
-                                    class="w-full text-sm py-2 px-3 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 touch-manipulation">
-                                    <option value="">-- No VPN --</option>
-                                    <template x-for="region in regions" :key="region.id">
-                                        <option :value="region.id" :selected="device.region_id === region.id" x-text="`${region.name} (${region.country})`"></option>
-                                    </template>
-                                </select>
-                                <div x-show="device.region_id" class="mt-1 text-xs" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'">
-                                    <span x-text="device.routing_enabled ? '✓ Routing enabled' : '⏳ Connecting...'"></span>
-                                    <span x-show="device.auto_managed" class="ml-1 text-gray-500 dark:text-gray-400">(Set exit node in app)</span>
+                            <div class="space-y-2">
+                                <!-- Searchable Region Dropdown -->
+                                <div>
+                                    <label class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">VPN Region</label>
+                                    <div x-data="{
+                                        open: false,
+                                        search: '',
+                                        get filteredRegions() {
+                                            if (!this.search) return regions;
+                                            const searchLower = this.search.toLowerCase();
+                                            return regions.filter(r =>
+                                                r.name.toLowerCase().includes(searchLower) ||
+                                                r.country.toLowerCase().includes(searchLower)
+                                            );
+                                        },
+                                        selectRegion(regionId) {
+                                            setDeviceRegion(device.id, regionId);
+                                            this.open = false;
+                                            this.search = '';
+                                        }
+                                    }" class="relative">
+                                        <!-- Selected Region Display -->
+                                        <button
+                                            @click="open = !open"
+                                            @click.away="open = false"
+                                            type="button"
+                                            class="w-full flex items-center justify-between text-sm py-2 px-3 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 touch-manipulation">
+                                            <span x-text="device.region_id ? (regions.find(r => r.id === device.region_id)?.name + ' (' + regions.find(r => r.id === device.region_id)?.country + ')') : '-- No VPN --'"></span>
+                                            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        </button>
+
+                                        <!-- Dropdown -->
+                                        <div x-show="open" class="absolute z-10 mt-1 w-full bg-white dark:bg-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                            <!-- Search Box -->
+                                            <div class="sticky top-0 p-2 bg-white dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                                <input
+                                                    x-model="search"
+                                                    type="text"
+                                                    placeholder="Search country or city..."
+                                                    class="w-full text-sm py-1 px-2 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-white focus:border-blue-500 focus:ring-blue-500">
+                                            </div>
+
+                                            <!-- No VPN Option -->
+                                            <button
+                                                @click="selectRegion('')"
+                                                class="w-full text-left text-sm py-2 px-3 hover:bg-gray-100 dark:hover:bg-gray-600"
+                                                :class="!device.region_id ? 'bg-blue-50 dark:bg-blue-900' : ''">
+                                                -- No VPN --
+                                            </button>
+
+                                            <!-- Region List -->
+                                            <template x-for="region in filteredRegions" :key="region.id">
+                                                <button
+                                                    @click="selectRegion(region.id)"
+                                                    class="w-full text-left text-sm py-2 px-3 hover:bg-gray-100 dark:hover:bg-gray-600"
+                                                    :class="device.region_id === region.id ? 'bg-blue-50 dark:bg-blue-900' : ''">
+                                                    <span x-text="`${region.name} (${region.country})`"></span>
+                                                </button>
+                                            </template>
+
+                                            <!-- No Results -->
+                                            <div x-show="filteredRegions.length === 0" class="text-sm py-2 px-3 text-gray-500 dark:text-gray-400">
+                                                No regions found
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Status and Toggle Button -->
+                                <div class="flex items-center justify-between">
+                                    <div x-show="device.region_id" class="text-xs" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'">
+                                        <span x-text="device.routing_enabled ? '✓ Routing enabled' : '⏳ Connecting...'"></span>
+                                        <span x-show="device.auto_managed" class="ml-1 text-gray-500 dark:text-gray-400">(Set exit node in app)</span>
+                                    </div>
+
+                                    <!-- Play/Pause Toggle Button -->
+                                    <button
+                                        x-show="device.region_id"
+                                        @click="toggleDeviceRouting(device.id)"
+                                        :disabled="!device.region_id"
+                                        class="flex items-center justify-center w-8 h-8 rounded-full transition-colors"
+                                        :class="device.routing_enabled ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 dark:hover:bg-green-800' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'"
+                                        :title="device.routing_enabled ? 'Pause routing' : 'Start routing'">
+                                        <!-- Play Icon (when paused) -->
+                                        <svg x-show="!device.routing_enabled" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M8 5v14l11-7z"/>
+                                        </svg>
+                                        <!-- Pause Icon (when playing) -->
+                                        <svg x-show="device.routing_enabled" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                                        </svg>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -208,15 +289,94 @@
                                         <span :class="device.online ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'" class="px-2 py-1 text-xs rounded-full" x-text="device.online ? 'Online' : 'Offline'"></span>
                                     </td>
                                     <td class="px-6 py-4">
-                                        <select
-                                            @change="setDeviceRegion(device.id, $event.target.value)"
-                                            class="text-sm py-2 px-3 rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 touch-manipulation">
-                                            <option value="">-- No VPN --</option>
-                                            <template x-for="region in regions" :key="region.id">
-                                                <option :value="region.id" :selected="device.region_id === region.id" x-text="`${region.name} (${region.country})`"></option>
-                                            </template>
-                                        </select>
-                                        <div x-show="device.region_id" class="mt-1 text-xs" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'">
+                                        <div class="flex items-center space-x-2">
+                                            <!-- Searchable Dropdown -->
+                                            <div x-data="{
+                                                open: false,
+                                                search: '',
+                                                get filteredRegions() {
+                                                    if (!this.search) return regions;
+                                                    const searchLower = this.search.toLowerCase();
+                                                    return regions.filter(r =>
+                                                        r.name.toLowerCase().includes(searchLower) ||
+                                                        r.country.toLowerCase().includes(searchLower)
+                                                    );
+                                                },
+                                                selectRegion(regionId) {
+                                                    setDeviceRegion(device.id, regionId);
+                                                    this.open = false;
+                                                    this.search = '';
+                                                }
+                                            }" class="relative flex-1">
+                                                <!-- Selected Region Display -->
+                                                <button
+                                                    @click="open = !open"
+                                                    @click.away="open = false"
+                                                    type="button"
+                                                    class="w-full flex items-center justify-between text-sm py-2 px-3 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 min-w-[200px]">
+                                                    <span x-text="device.region_id ? (regions.find(r => r.id === device.region_id)?.name + ' (' + regions.find(r => r.id === device.region_id)?.country + ')') : '-- No VPN --'"></span>
+                                                    <svg class="w-4 h-4 ml-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                    </svg>
+                                                </button>
+
+                                                <!-- Dropdown -->
+                                                <div x-show="open" class="absolute z-10 mt-1 w-full bg-white dark:bg-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                    <!-- Search Box -->
+                                                    <div class="sticky top-0 p-2 bg-white dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                                        <input
+                                                            x-model="search"
+                                                            type="text"
+                                                            placeholder="Search country or city..."
+                                                            class="w-full text-sm py-1 px-2 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-white focus:border-blue-500 focus:ring-blue-500">
+                                                    </div>
+
+                                                    <!-- No VPN Option -->
+                                                    <button
+                                                        @click="selectRegion('')"
+                                                        class="w-full text-left text-sm py-2 px-3 hover:bg-gray-100 dark:hover:bg-gray-600"
+                                                        :class="!device.region_id ? 'bg-blue-50 dark:bg-blue-900' : ''">
+                                                        -- No VPN --
+                                                    </button>
+
+                                                    <!-- Region List -->
+                                                    <template x-for="region in filteredRegions" :key="region.id">
+                                                        <button
+                                                            @click="selectRegion(region.id)"
+                                                            class="w-full text-left text-sm py-2 px-3 hover:bg-gray-100 dark:hover:bg-gray-600"
+                                                            :class="device.region_id === region.id ? 'bg-blue-50 dark:bg-blue-900' : ''">
+                                                            <span x-text="`${region.name} (${region.country})`"></span>
+                                                        </button>
+                                                    </template>
+
+                                                    <!-- No Results -->
+                                                    <div x-show="filteredRegions.length === 0" class="text-sm py-2 px-3 text-gray-500 dark:text-gray-400">
+                                                        No regions found
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Play/Pause Toggle Button -->
+                                            <button
+                                                x-show="device.region_id"
+                                                @click="toggleDeviceRouting(device.id)"
+                                                :disabled="!device.region_id"
+                                                class="flex items-center justify-center w-10 h-10 rounded-full transition-colors flex-shrink-0"
+                                                :class="device.routing_enabled ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 dark:hover:bg-green-800' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'"
+                                                :title="device.routing_enabled ? 'Pause routing' : 'Start routing'">
+                                                <!-- Play Icon (when paused) -->
+                                                <svg x-show="!device.routing_enabled" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                                    <path d="M8 5v14l11-7z"/>
+                                                </svg>
+                                                <!-- Pause Icon (when playing) -->
+                                                <svg x-show="device.routing_enabled" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                                    <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+
+                                        <!-- Status -->
+                                        <div x-show="device.region_id" class="mt-2 text-xs" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'">
                                             <span x-text="device.routing_enabled ? '✓ Routing enabled' : '⏳ Connecting...'"></span>
                                             <span x-show="device.auto_managed" class="ml-1 text-gray-500 dark:text-gray-400">(Set exit node in Tailscale app)</span>
                                         </div>
@@ -421,6 +581,32 @@
                         }
                     } catch (error) {
                         alert('Failed to set device region: ' + error.message);
+                        await this.loadDevices();
+                    }
+                },
+
+                async toggleDeviceRouting(deviceId) {
+                    try {
+                        const response = await fetch(`/api/devices/${deviceId}/toggle`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({})
+                        });
+
+                        if (!response.ok) {
+                            const error = await response.json();
+                            alert('Failed to toggle device routing: ' + error.detail);
+                            await this.loadDevices();
+                        } else {
+                            const data = await response.json();
+                            await this.loadDevices();
+                            await this.loadVPNStatus();
+                            if (data.message) {
+                                console.log('✓ ' + data.message);
+                            }
+                        }
+                    } catch (error) {
+                        alert('Failed to toggle device routing: ' + error.message);
                         await this.loadDevices();
                     }
                 },
