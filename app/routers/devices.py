@@ -134,7 +134,10 @@ async def get_devices() -> TailscaleDeviceList:
 
 
 @router.post("/{device_id}/toggle")
-async def toggle_device_routing(device_id: str, toggle: DeviceRoutingToggle = None) -> SuccessResponse:
+async def toggle_device_routing(
+    device_id: str,
+    toggle: DeviceRoutingToggle = DeviceRoutingToggle(enabled=None)
+) -> SuccessResponse:
     """Toggle PIA routing for a specific device.
 
     Args:
@@ -159,7 +162,7 @@ async def toggle_device_routing(device_id: str, toggle: DeviceRoutingToggle = No
         device_ip = ip_addresses[0]
 
         # Determine target state (toggle current state if not specified)
-        if toggle is None or not hasattr(toggle, 'enabled'):
+        if toggle.enabled is None:
             current_state = await DeviceRoutingDB.is_enabled(device_id)
             target_enabled = not current_state
         else:

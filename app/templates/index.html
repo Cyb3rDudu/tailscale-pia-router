@@ -230,9 +230,12 @@
 
                                 <!-- Status and Toggle Button -->
                                 <div class="flex items-center justify-between">
-                                    <div x-show="device.region_id" class="text-xs flex-1" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'">
-                                        <span x-text="device.routing_enabled ? '✓ Routing enabled' : '⏳ Connecting...'"></span>
+                                    <div x-show="device.region_id && device.routing_enabled" class="text-xs flex-1 text-green-600 dark:text-green-400">
+                                        <span>✓ Routing enabled</span>
                                         <span x-show="device.auto_managed" class="ml-1 text-gray-500 dark:text-gray-400">(Set exit node in app)</span>
+                                    </div>
+                                    <div x-show="device.region_id && !device.routing_enabled" class="text-xs flex-1 text-gray-500 dark:text-gray-400">
+                                        <span>Ready to start</span>
                                     </div>
 
                                     <!-- Play/Stop Toggle Button -->
@@ -374,9 +377,12 @@
                                         </div>
 
                                         <!-- Status -->
-                                        <div x-show="device.region_id" class="mt-2 text-xs" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'">
-                                            <span x-text="device.routing_enabled ? '✓ Routing enabled' : '⏳ Connecting...'"></span>
+                                        <div x-show="device.region_id && device.routing_enabled" class="mt-2 text-xs text-green-600 dark:text-green-400">
+                                            <span>✓ Routing enabled</span>
                                             <span x-show="device.auto_managed" class="ml-1 text-gray-500 dark:text-gray-400">(Set exit node in Tailscale app)</span>
+                                        </div>
+                                        <div x-show="device.region_id && !device.routing_enabled" class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                            <span>Ready to start</span>
                                         </div>
                                     </td>
                                 </tr>

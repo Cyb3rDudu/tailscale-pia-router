@@ -60,7 +60,7 @@ class TailscaleDeviceList(BaseModel):
 
 class DeviceRoutingToggle(BaseModel):
     """Toggle device routing."""
-    enabled: bool
+    enabled: Optional[bool] = None  # None to toggle current state
 
 
 class DeviceRegionSelect(BaseModel):
