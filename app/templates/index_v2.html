@@ -377,24 +377,17 @@
                         </div>
                     </div>
 
-                    <!-- Throughput Graph -->
+                    <!-- Throughput Graph - Ultra-lightweight Canvas -->
                     <div class="mb-4">
                         <h3 class="text-sm font-medium text-slate-300 mb-2">Throughput</h3>
-                        <div id="throughput-chart" class="bg-slate-800 rounded p-2 border border-slate-700 relative transition-opacity duration-300"
-                             :class="chartTransitioning ? 'opacity-50' : 'opacity-100'"
-                             style="height: 180px;">
-                            <!-- Loading Skeleton -->
-                            <div x-show="metricsLoading" class="absolute inset-0 flex items-center justify-center bg-slate-800 rounded">
-                                <div class="flex flex-col items-center gap-2">
-                                    <svg class="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
-                                    <span class="text-xs text-slate-400">Loading metrics...</span>
-                                </div>
-                            </div>
+                        <div class="bg-slate-800 rounded p-2 border border-slate-700 relative" style="height: 180px;">
+                            <canvas id="throughput-canvas"
+                                    width="600"
+                                    height="164"
+                                    style="width: 100%; height: 164px; display: block;"
+                                    x-show="hasMetricsData()"></canvas>
                             <!-- Empty State -->
-                            <div x-show="!hasMetricsData() && !metricsLoading" class="flex items-center justify-center h-full">
+                            <div x-show="!hasMetricsData()" class="flex items-center justify-center h-full">
                                 <div class="text-center">
                                     <svg class="w-12 h-12 mx-auto mb-2 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
@@ -641,8 +634,7 @@
 
                 // WebSocket for real-time metrics
                 websocket: null,
-                metricsData: {},  // { interface: { timestamps: [], rx: [], tx: [] } }
-                metricsCharts: {},  // { throughput: uPlotInstance }
+                metricsData: {},  // { interface: { timestamps: [], rx: [], tx: [], rawRx: [], rawTx: [] } }
 
                 get filteredDevices() {
                     if (this.selectedEndpoint === null) return this.devices;
@@ -1872,97 +1864,133 @@
                     });
                 },
 
-            // Chart rendering and helper methods for Endpoint Metrics
+            // ULTRA-LIGHTWEIGHT CANVAS CHART - Zero GPU overhead
             updateMetricsCharts() {
-                if (!this.selectedEndpoint || this.selectedEndpoint === null) {
-                    // Destroy charts if they exist
-                    if (this.metricsCharts.throughput) {
-                        this.metricsCharts.throughput.destroy();
-                        this.metricsCharts.throughput = null;
-                    }
-                    return;
-                }
+                if (!this.selectedEndpoint || this.selectedEndpoint === null) return;
 
-                // Find interface for selected endpoint
                 const connection = this.vpnStatus.connections.find(c => c.region_id === this.selectedEndpoint);
                 if (!connection) return;
 
                 const history = this.metricsData[connection.interface];
                 if (!history || history.timestamps.length < 2) return;
 
-                // Create/update throughput chart with raw data (no filtering, no aggregation)
-                this.renderThroughputChart(history);
+                this.renderCanvasChart(history);
             },
 
-            renderThroughputChart(data) {
-                const chartDiv = document.getElementById('throughput-chart');
-                if (!chartDiv) return;
+            renderCanvasChart(data) {
+                const canvas = document.getElementById('throughput-canvas');
+                if (!canvas) return;
 
-                // EXACT COPY FROM CLASSIC VIEW - uPlot data format
-                const chartData = [
-                    [...data.timestamps],
-                    [...data.rx],
-                    [...data.tx]
-                ];
+                const ctx = canvas.getContext('2d', { alpha: false }); // Disable alpha for performance
+                const width = canvas.width;
+                const height = canvas.height;
 
-                // Only create chart if it doesn't exist, otherwise just update data
-                if (!this.metricsCharts.throughput) {
-                    // EXACT COPY FROM CLASSIC VIEW - uPlot options
-                    const chartWidth = Math.max(chartDiv.clientWidth, 280);
-                    const chartHeight = 180;
-                    const opts = {
-                        width: chartWidth,
-                        height: chartHeight,
-                        padding: [10, 10, 10, 0],  // top, right, bottom, left
-                        series: [
-                            { label: 'Time' },
-                            {
-                                label: 'Download',
-                                stroke: 'rgb(34, 197, 94)',  // Green - EXACT COPY
-                                fill: 'rgba(34, 197, 94, 0.1)',
-                                width: 2,
-                                value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
-                            },
-                            {
-                                label: 'Upload',
-                                stroke: 'rgb(59, 130, 246)',  // Blue - EXACT COPY
-                                fill: 'rgba(59, 130, 246, 0.1)',
-                                width: 2,
-                                value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
-                            }
-                        ],
-                        axes: [
-                            { show: false },  // X-axis (time)
-                            {  // Y-axis (bytes/s)
-                                stroke: '#9ca3af',
-                                grid: {
-                                    stroke: '#374151',
-                                    width: 1
-                                },
-                                values: (self, ticks) => ticks.map(v => this.formatBytes(v) + '/s'),
-                                size: 70
-                            }
-                        ],
-                        legend: { show: false },
-                        cursor: {
-                            drag: { x: false, y: false }
-                        }
-                    };
+                // Clear canvas - solid fill (no transparency)
+                ctx.fillStyle = '#1e293b'; // bg-slate-800
+                ctx.fillRect(0, 0, width, height);
 
-                    this.metricsCharts.throughput = new uPlot(opts, chartData, chartDiv);
-                } else {
-                    // EXACT COPY FROM CLASSIC VIEW - update existing chart
-                    const chart = this.metricsCharts.throughput;
-                    if (chart && chart.root && chart.root.isConnected) {
-                        try {
-                            chart.setData(chartData);
-                        } catch (e) {
-                            console.error('Chart update failed:', e);
-                            chart.destroy();
-                            this.metricsCharts.throughput = null;
-                        }
+                if (!data || data.rx.length < 2) return;
+
+                // Find max value for Y-scale (calculated ONCE, not per frame)
+                const maxRx = Math.max(...data.rx);
+                const maxTx = Math.max(...data.tx);
+                const maxValue = Math.max(maxRx, maxTx);
+                if (maxValue === 0) return;
+
+                // Add 10% padding to max for visual breathing room
+                const yMax = maxValue * 1.1;
+
+                // Chart dimensions
+                const padding = { top: 10, right: 10, bottom: 20, left: 60 };
+                const chartWidth = width - padding.left - padding.right;
+                const chartHeight = height - padding.top - padding.bottom;
+
+                // Draw grid lines (5 horizontal lines, static)
+                ctx.strokeStyle = '#374151'; // Subtle gray
+                ctx.lineWidth = 1;
+                for (let i = 0; i <= 4; i++) {
+                    const y = padding.top + (chartHeight / 4) * i;
+                    ctx.beginPath();
+                    ctx.moveTo(padding.left, y);
+                    ctx.lineTo(width - padding.right, y);
+                    ctx.stroke();
+                }
+
+                // Draw Y-axis labels
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '11px monospace';
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                for (let i = 0; i <= 4; i++) {
+                    const value = yMax - (yMax / 4) * i;
+                    const y = padding.top + (chartHeight / 4) * i;
+                    ctx.fillText(this.formatBytes(value) + '/s', padding.left - 5, y);
+                }
+
+                // Helper: map data value to canvas Y coordinate
+                const dataToY = (value) => {
+                    const ratio = value / yMax;
+                    return padding.top + chartHeight - (ratio * chartHeight);
+                };
+
+                // Helper: map data index to canvas X coordinate
+                const indexToX = (index, total) => {
+                    const ratio = index / (total - 1);
+                    return padding.left + (ratio * chartWidth);
+                };
+
+                const pointCount = data.rx.length;
+
+                // Draw download line (green) - STRAIGHT LINES, no curves
+                ctx.strokeStyle = '#22c55e'; // Green (#74FF80 equivalent)
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                for (let i = 0; i < pointCount; i++) {
+                    const x = indexToX(i, pointCount);
+                    const y = dataToY(data.rx[i]);
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
                     }
                 }
+                ctx.stroke();
+
+                // Draw upload line (blue) - STRAIGHT LINES, no curves
+                ctx.strokeStyle = '#3b82f6'; // Blue (#78A7FF equivalent)
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                for (let i = 0; i < pointCount; i++) {
+                    const x = indexToX(i, pointCount);
+                    const y = dataToY(data.tx[i]);
+                    if (i === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+                ctx.stroke();
+
+                // Optional: Draw small points on lines (only if performance allows)
+                // Commented out by default for maximum performance
+                /*
+                ctx.fillStyle = '#22c55e';
+                for (let i = 0; i < pointCount; i += 5) { // Every 5th point
+                    const x = indexToX(i, pointCount);
+                    const y = dataToY(data.rx[i]);
+                    ctx.beginPath();
+                    ctx.arc(x, y, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.fillStyle = '#3b82f6';
+                for (let i = 0; i < pointCount; i += 5) {
+                    const x = indexToX(i, pointCount);
+                    const y = dataToY(data.tx[i]);
+                    ctx.beginPath();
+                    ctx.arc(x, y, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                */
             },
 
             // Helper methods for summary cards
