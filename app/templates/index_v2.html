@@ -58,9 +58,7 @@
             fill: none;
             opacity: 0.7;
             stroke-dasharray: 6 4;
-            /* GPU-friendly: will-change tells browser to optimize this layer */
-            will-change: stroke-dashoffset;
-            animation: dash-route 60s linear infinite;
+            /* Animation removed - static dashed lines are GPU-friendly */
         }
 
         .network-link-vpn.dimmed {
@@ -74,13 +72,6 @@
             stroke-width: 3;
             opacity: 1;
             filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.8));
-        }
-
-        /* GPU-optimized animation: 60s (3x slower), uses transform for GPU acceleration */
-        @keyframes dash-route {
-            to {
-                stroke-dashoffset: -200;
-            }
         }
 
         /* Endpoint nodes (geographic PIA servers) - smaller with glow */
