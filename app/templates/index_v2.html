@@ -138,11 +138,11 @@
         .mesh-label {
             font-size: 10px;
             font-weight: 500;
-            fill: #e2e8f0;
-            opacity: 0.95;
+            fill: #f1f5f9;
+            opacity: 1;
             paint-order: stroke;
             stroke: #000000;
-            stroke-width: 2px;
+            stroke-width: 2.5px;
             stroke-linecap: round;
             stroke-linejoin: round;
             pointer-events: none;
@@ -632,6 +632,53 @@
                     });
                 },
 
+                // Calculate smart map center based on active endpoints
+                calculateMapCenter() {
+                    if (!this.vpnStatus.connections || this.vpnStatus.connections.length === 0) {
+                        // Default to global view if no endpoints
+                        return { centerLon: 60, centerLat: 10, scale: 1 };
+                    }
+
+                    // Get all endpoint coordinates
+                    const endpointCoords = this.vpnStatus.connections.map(conn => {
+                        return this.getRegionCoordinates(conn.region_id);
+                    }).filter(coord => coord.lat !== 0 || coord.lng !== 60); // Filter out defaults
+
+                    if (endpointCoords.length === 0) {
+                        return { centerLon: 60, centerLat: 10, scale: 1 };
+                    }
+
+                    // Calculate bounding box
+                    const lons = endpointCoords.map(c => c.lng);
+                    const lats = endpointCoords.map(c => c.lat);
+
+                    const minLon = Math.min(...lons);
+                    const maxLon = Math.max(...lons);
+                    const minLat = Math.min(...lats);
+                    const maxLat = Math.max(...lats);
+
+                    // Calculate center (weighted average)
+                    const centerLon = (minLon + maxLon) / 2;
+                    const centerLat = ((minLat + maxLat) / 2) - 5; // Slight downward adjustment for framing
+
+                    // Calculate zoom scale based on bounding box span
+                    const lonSpan = maxLon - minLon;
+                    const latSpan = maxLat - minLat;
+
+                    // Add 20% padding
+                    const paddedLonSpan = lonSpan * 1.4;
+                    const paddedLatSpan = latSpan * 1.4;
+
+                    // Calculate scale to fit all endpoints (conservative to ensure visibility)
+                    const baseScale = this.networkGraph ? this.networkGraph.width / 6.5 : 100;
+                    const scaleByLon = baseScale / (paddedLonSpan / 60); // 60 is reference span
+                    const scaleByLat = baseScale / (paddedLatSpan / 40); // 40 is reference span
+
+                    const scale = Math.max(0.8, Math.min(1.8, Math.min(scaleByLon, scaleByLat)));
+
+                    return { centerLon, centerLat, scale };
+                },
+
                 async initTopologyGraph() {
                     const container = document.getElementById('topology-graph');
                     if (!container) return;
@@ -649,10 +696,13 @@
                         .attr('height', height)
                         .attr('viewBox', [0, 0, width, height]);
 
-                    // Create CORRECT projection for world map
+                    // Calculate smart center based on endpoints
+                    const { centerLon, centerLat, scale } = this.calculateMapCenter();
+
+                    // Create projection with smart centering
                     const projection = d3.geoMercator()
-                        .center([60, 10])  // Center between Asia and Australia
-                        .scale(width / 6.5)
+                        .center([centerLon, centerLat])
+                        .scale((width / 6.5) * scale)
                         .translate([width / 2, height / 2]);
 
                     // Create groups for layers (order matters for z-index)
@@ -714,9 +764,13 @@
                         .attr('height', newHeight)
                         .attr('viewBox', [0, 0, newWidth, newHeight]);
 
-                    // Update projection
+                    // Recalculate smart center for new viewport
+                    const { centerLon, centerLat, scale } = this.calculateMapCenter();
+
+                    // Update projection with smart centering
                     this.networkGraph.projection
-                        .scale(newWidth / 6.5)
+                        .center([centerLon, centerLat])
+                        .scale((newWidth / 6.5) * scale)
                         .translate([newWidth / 2, newHeight / 2]);
 
                     // Update dimensions
@@ -759,6 +813,14 @@
                     return `M${source.x},${source.y} Q${(source.x + target.x) / 2},${(source.y + target.y) / 2 - curve} ${target.x},${target.y}`;
                 },
 
+                // Check for mesh/endpoint overlaps
+                checkOverlap(meshNode, endpointNode, threshold = 40) {
+                    const dx = meshNode.x - endpointNode.x;
+                    const dy = meshNode.y - endpointNode.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    return distance < threshold;
+                },
+
                 updateTopologyGraph() {
                     if (!this.networkGraph) return;
 
@@ -770,9 +832,9 @@
                     const centerX = width / 2;
                     const centerY = height / 2;
 
-                    // 3D tilt effect: mesh radius + perspective offset
-                    const meshRadius = Math.min(width, height) * 0.28;
-                    const tiltAngle = 15; // degrees
+                    // 3D tilt effect: mesh radius + perspective offset (increased to 18°)
+                    let meshRadius = Math.min(width, height) * 0.26;
+                    const tiltAngle = 18; // degrees (increased from 15° for more depth)
                     const tiltRadians = (tiltAngle * Math.PI) / 180;
 
                     // Create endpoint nodes at CORRECT geographic locations
@@ -798,8 +860,10 @@
                         }
                     });
 
-                    // Position devices in circular mesh with 3D tilt
+                    // Calculate initial mesh positions
                     const deviceCount = this.devices.length;
+                    const potentialDeviceNodes = [];
+
                     this.devices.forEach((device, idx) => {
                         const angle = (idx / deviceCount) * 2 * Math.PI - Math.PI / 2;
 
@@ -808,9 +872,9 @@
                         const baseY = centerY + meshRadius * Math.sin(angle);
 
                         // Apply 3D tilt (y-axis rotation creates perspective)
-                        const tiltOffset = Math.sin(angle) * meshRadius * Math.sin(tiltRadians) * 0.3;
+                        const tiltOffset = Math.sin(angle) * meshRadius * Math.sin(tiltRadians) * 0.35;
 
-                        nodes.push({
+                        potentialDeviceNodes.push({
                             id: `device-${device.id}`,
                             label: device.hostname,
                             type: 'device',
@@ -820,9 +884,43 @@
                             routing_enabled: device.routing_enabled,
                             x: baseX,
                             y: baseY - tiltOffset,  // Tilt creates vertical offset
-                            depth: Math.cos(angle)  // For depth sorting
+                            depth: Math.cos(angle),  // For depth sorting
+                            angle: angle  // Store for potential rotation
                         });
                     });
+
+                    // Check for overlaps and adjust radius if needed
+                    let hasOverlap = false;
+                    const endpointList = Object.values(endpointNodes);
+
+                    for (const meshNode of potentialDeviceNodes) {
+                        for (const endpoint of endpointList) {
+                            if (this.checkOverlap(meshNode, endpoint)) {
+                                hasOverlap = true;
+                                break;
+                            }
+                        }
+                        if (hasOverlap) break;
+                    }
+
+                    // If overlap detected, reduce mesh radius slightly
+                    if (hasOverlap) {
+                        meshRadius *= 0.85;
+
+                        // Recalculate positions with adjusted radius
+                        potentialDeviceNodes.forEach((node, idx) => {
+                            const angle = node.angle;
+                            const baseX = centerX + meshRadius * Math.cos(angle);
+                            const baseY = centerY + meshRadius * Math.sin(angle);
+                            const tiltOffset = Math.sin(angle) * meshRadius * Math.sin(tiltRadians) * 0.35;
+
+                            node.x = baseX;
+                            node.y = baseY - tiltOffset;
+                        });
+                    }
+
+                    // Add device nodes to main nodes array
+                    nodes.push(...potentialDeviceNodes);
 
                     // Sort devices by depth for proper layering
                     const deviceNodes = nodes.filter(n => n.type === 'device').sort((a, b) => a.depth - b.depth);
@@ -930,7 +1028,7 @@
                             this.selectEndpointFilter(d.region_id);
                         });
 
-                    endpointNodeEnter.append('circle').attr('r', 10);  // Reduced from 18 to 10 (45% smaller)
+                    endpointNodeEnter.append('circle').attr('r', 8);  // Reduced from 18 to 8 (55% smaller)
 
                     const allEndpointNodes = endpointNodeEnter.merge(endpointNode);
 
