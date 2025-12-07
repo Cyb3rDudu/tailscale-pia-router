@@ -693,8 +693,14 @@
                     // Start WebSocket for real-time metrics
                     this.connectMetricsWebSocket();
 
-                    // Watch for time range changes and update charts
+                    // Watch for time range changes - destroy and recreate chart
                     this.$watch('selectedTimeRange', () => {
+                        // Destroy chart to force recreation with new data range
+                        if (this.metricsCharts.throughput) {
+                            this.metricsCharts.throughput.destroy();
+                            this.metricsCharts.throughput = null;
+                        }
+
                         this.chartTransitioning = true;
                         setTimeout(() => {
                             this.updateMetricsCharts();
@@ -702,8 +708,13 @@
                         }, 300);
                     });
 
-                    // Watch for smooth/raw toggle changes and update throughput chart
+                    // Watch for smooth/raw toggle - destroy and recreate chart
                     this.$watch('showRawData', () => {
+                        // Destroy chart to force recreation with new smoothing mode
+                        if (this.metricsCharts.throughput) {
+                            this.metricsCharts.throughput.destroy();
+                            this.metricsCharts.throughput = null;
+                        }
                         this.updateMetricsCharts();
                     });
 
@@ -2028,66 +2039,70 @@
                     txData
                 ];
 
-                // Destroy old chart if switching modes or time range
-                if (this.metricsCharts.throughput) {
-                    this.metricsCharts.throughput.destroy();
-                    this.metricsCharts.throughput = null;
-                }
-
-                const opts = {
-                    width: chartDiv.clientWidth - 20,
-                    height: 180,
-                    padding: [10, 10, 10, 0],
-                    series: [
-                        { label: 'Time' },
-                        {
-                            label: 'Download',
-                            stroke: 'rgb(34, 197, 94)',  // Green
-                            fill: 'rgba(34, 197, 94, 0.1)',
-                            width: 2,
-                            value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
-                        },
-                        {
-                            label: 'Upload',
-                            stroke: 'rgb(59, 130, 246)',  // Blue
-                            fill: 'rgba(59, 130, 246, 0.1)',
-                            width: 2,
-                            value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
-                        }
-                    ],
-                    scales: {
-                        y: {
-                            range: [minValue, yMax]
-                        }
-                    },
-                    axes: [
-                        { show: false },  // X-axis (time)
-                        {  // Y-axis (bytes/s)
-                            stroke: '#9ca3af',
-                            grid: {
-                                stroke: 'rgba(71, 85, 105, 0.3)',  // Subtle gridlines
-                                width: 1
+                // Only create chart if it doesn't exist, otherwise just update data
+                if (!this.metricsCharts.throughput) {
+                    const opts = {
+                        width: chartDiv.clientWidth - 20,
+                        height: 180,
+                        padding: [10, 10, 10, 0],
+                        series: [
+                            { label: 'Time' },
+                            {
+                                label: 'Download',
+                                stroke: 'rgb(34, 197, 94)',  // Green
+                                fill: 'rgba(34, 197, 94, 0.1)',
+                                width: 2,
+                                value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
                             },
-                            values: (self, ticks) => ticks.map(v => this.formatBytes(v) + '/s'),
-                            size: 70
-                        }
-                    ],
-                    legend: { show: false },
-                    cursor: {
-                        drag: { x: false, y: false },
-                        focus: { prox: 30 },
-                        points: {
-                            size: 6,
-                            width: 1.5
+                            {
+                                label: 'Upload',
+                                stroke: 'rgb(59, 130, 246)',  // Blue
+                                fill: 'rgba(59, 130, 246, 0.1)',
+                                width: 2,
+                                value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
+                            }
+                        ],
+                        scales: {
+                            y: {
+                                auto: false,
+                                range: (self, dataMin, dataMax) => [minValue, yMax]
+                            }
                         },
-                        sync: {
-                            key: 'metrics',
-                            setSeries: true
+                        axes: [
+                            { show: false },  // X-axis (time)
+                            {  // Y-axis (bytes/s)
+                                stroke: '#9ca3af',
+                                grid: {
+                                    stroke: 'rgba(71, 85, 105, 0.3)',  // Subtle gridlines
+                                    width: 1
+                                },
+                                values: (self, ticks) => ticks.map(v => this.formatBytes(v) + '/s'),
+                                size: 70
+                            }
+                        ],
+                        legend: { show: false },
+                        cursor: {
+                            drag: { x: false, y: false },
+                            focus: { prox: 30 },
+                            points: {
+                                size: 6,
+                                width: 1.5
+                            },
+                            sync: {
+                                key: 'metrics',
+                                setSeries: true
+                            }
                         }
-                    }
-                };
+                    };
 
-                this.metricsCharts.throughput = new uPlot(opts, chartData, chartDiv);
+                    this.metricsCharts.throughput = new uPlot(opts, chartData, chartDiv);
+                } else {
+                    // Just update the data - much more efficient!
+                    this.metricsCharts.throughput.setData(chartData);
+
+                    // Update Y-axis scale if needed
+                    this.metricsCharts.throughput.setScale('y', { min: minValue, max: yMax });
+                }
             },
 
             // Helper methods for summary cards
