@@ -170,13 +170,15 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        /* Two-line endpoint pill styles */
-        .endpoint-pill-two-line {
+        /* Equal-width endpoint pill styles */
+        .endpoint-pill-equal {
+            flex: 1 1 0;
+            min-width: 200px;
+            max-width: 280px;
             border-width: 1px;
-            min-height: 56px;
         }
 
-        .endpoint-pill-two-line:hover:not(.bg-blue-600) {
+        .endpoint-pill-equal:hover:not(.bg-blue-600) {
             background-color: #334155 !important;
         }
 
@@ -275,41 +277,40 @@
         </div>
     </header>
 
-    <!-- Endpoint Pills - Multi-Row Wrap, Two-Line Layout -->
+    <!-- Endpoint Pills - Equal Width, Multi-Row Wrap, Two-Line Layout -->
     <div class="bg-slate-900 border-b border-slate-800 px-6 py-3">
-        <div class="flex items-start gap-2 flex-wrap">
-            <span class="text-sm text-slate-400 flex-shrink-0 leading-[56px]">Filter:</span>
-
-            <!-- All Endpoints Pill (Two-Line) -->
+        <div class="flex items-center gap-3 mb-2">
+            <span class="text-sm text-slate-400 flex-shrink-0">Filter:</span>
+        </div>
+        <div class="flex gap-2 flex-wrap">
+            <!-- All Endpoints Pill (Equal Width, Two-Line) -->
             <div
-                class="endpoint-pill-two-line flex items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0 cursor-pointer transition-all border h-[56px]"
+                class="endpoint-pill-equal flex items-center gap-3 rounded-lg px-4 py-2.5 cursor-pointer transition-all border"
                 :class="selectedEndpoint === null ? 'bg-blue-600 border-blue-500' : 'bg-slate-800 border-slate-700 hover:bg-slate-750'"
                 @click="clearEndpointFilter()">
-                <svg class="w-5 h-5 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                </svg>
-                <div class="flex flex-col justify-center">
-                    <span class="font-semibold text-white text-sm leading-tight">All Endpoints</span>
-                    <span class="text-slate-300 text-xs leading-tight">Global View</span>
+                <span class="text-xl flex-shrink-0 leading-none">🌐</span>
+                <div class="flex flex-col justify-center min-w-0 flex-1">
+                    <span class="font-semibold text-white text-sm leading-snug">All Endpoints</span>
+                    <span class="text-slate-300 text-xs leading-snug">Global View</span>
                 </div>
             </div>
 
-            <!-- Endpoint Pills (Two-Line) -->
+            <!-- Endpoint Pills (Equal Width, Two-Line) -->
             <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
                 <div
-                    class="endpoint-pill-two-line flex items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0 cursor-pointer transition-all border h-[56px]"
+                    class="endpoint-pill-equal flex items-center gap-3 rounded-lg px-4 py-2.5 cursor-pointer transition-all border"
                     :class="selectedEndpoint === conn.region_id ? 'bg-blue-600 border-blue-500' : 'bg-slate-800 border-slate-700 hover:bg-slate-750'"
                     @click="selectEndpointFilter(conn.region_id); fetchEndpointMetadata(conn.endpoint_ip)">
 
-                    <!-- Country flag -->
+                    <!-- Country flag (from ipapi.co) -->
                     <span class="text-xl flex-shrink-0 leading-none" x-text="getCountryFlagEmoji(endpointMetadata[conn.endpoint_ip]?.countryCode || '??')"></span>
 
                     <!-- Two-line text layout -->
-                    <div class="flex flex-col justify-center min-w-0">
+                    <div class="flex flex-col justify-center min-w-0 flex-1">
                         <!-- Line 1: Endpoint name (bold) -->
-                        <span class="font-semibold text-white text-sm leading-tight truncate" x-text="conn.region_name"></span>
+                        <span class="font-semibold text-white text-sm leading-snug truncate" x-text="conn.region_name"></span>
                         <!-- Line 2: IP address -->
-                        <span class="text-slate-300 text-xs font-mono leading-tight" x-text="conn.endpoint_ip || '...'"></span>
+                        <span class="text-slate-300 text-xs font-mono leading-snug truncate" x-text="conn.endpoint_ip || '...'"></span>
                     </div>
                 </div>
             </template>
