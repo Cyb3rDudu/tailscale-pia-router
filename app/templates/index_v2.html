@@ -850,11 +850,11 @@
                         ctx.globalAlpha = route.isActive ? 0.8 : 0.25;
 
                         // Fixed-length dashes covering 50% of path
-                        const fixedDashLengthPx = 20;  // Fixed 20px dashes for consistency
+                        const fixedDashLengthPx = 10;  // Smaller 10px dashes (was 20px)
                         const sampleInterval = 5;  // Same as sampling interval
                         const dashLengthSamples = Math.ceil(fixedDashLengthPx / sampleInterval);
 
-                        // Calculate dash count to cover 50% of path
+                        // Calculate dash count to cover 50% of path (automatically doubles with smaller dashes)
                         const totalDashLength = route.totalLength * 0.5;  // 50% coverage
                         const dashCount = Math.max(1, Math.floor(totalDashLength / fixedDashLengthPx));
 
