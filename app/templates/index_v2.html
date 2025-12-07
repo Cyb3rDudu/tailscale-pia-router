@@ -363,14 +363,14 @@
                     <div class="grid grid-cols-2 gap-3 mb-4">
                         <div class="bg-slate-800 rounded p-3 border border-slate-700">
                             <div class="text-xs text-slate-400 mb-1 font-medium">Download</div>
-                            <div class="text-base font-bold text-emerald-400" x-text="getCurrentDownloadRate()"></div>
+                            <div class="text-base font-bold text-green-400" x-text="getCurrentDownloadRate()"></div>
                             <div class="text-xs text-slate-500 mt-1">
                                 <span class="text-slate-400">avg</span> <span x-text="getAverageDownloadRate()"></span>
                             </div>
                         </div>
                         <div class="bg-slate-800 rounded p-3 border border-slate-700">
                             <div class="text-xs text-slate-400 mb-1 font-medium">Upload</div>
-                            <div class="text-base font-bold text-cyan-400" x-text="getCurrentUploadRate()"></div>
+                            <div class="text-base font-bold text-blue-400" x-text="getCurrentUploadRate()"></div>
                             <div class="text-xs text-slate-500 mt-1">
                                 <span class="text-slate-400">avg</span> <span x-text="getAverageUploadRate()"></span>
                             </div>
@@ -407,11 +407,11 @@
                         <!-- Custom Legend -->
                         <div class="flex gap-5 mt-3 px-2">
                             <div class="flex items-center gap-2">
-                                <span class="inline-block w-3 h-0.5 bg-emerald-500 rounded-sm"></span>
+                                <span class="inline-block w-3 h-0.5 bg-green-500 rounded-sm"></span>
                                 <span class="text-xs font-medium text-slate-400 tracking-wide">Download</span>
                             </div>
                             <div class="flex items-center gap-2">
-                                <span class="inline-block w-3 h-0.5 bg-cyan-500 rounded-sm"></span>
+                                <span class="inline-block w-3 h-0.5 bg-blue-500 rounded-sm"></span>
                                 <span class="text-xs font-medium text-slate-400 tracking-wide">Upload</span>
                             </div>
                         </div>
@@ -1102,45 +1102,86 @@
                 },
 
                 updateMetricsData(vpnStatus) {
-                    const now = Date.now() / 1000;  // Unix timestamp in seconds
+                    const now = Date.now();
 
                     vpnStatus.connections.forEach(conn => {
                         const iface = conn.interface;
+
+                        // Initialize history - EXACT COPY FROM CLASSIC VIEW
                         if (!this.metricsData[iface]) {
                             this.metricsData[iface] = {
-                                timestamps: [],
+                                timestamps: [],  // Unix timestamps in seconds
                                 rx: [],
                                 tx: [],
-                                prevRxBytes: conn.transfer_rx_bytes,
-                                prevTxBytes: conn.transfer_tx_bytes,
+                                rawRx: [],  // Store raw rates for moving average
+                                rawTx: [],  // Store raw rates for moving average
+                                prevRx: conn.transfer_rx_bytes || 0,
+                                prevTx: conn.transfer_tx_bytes || 0,
                                 prevTime: now
                             };
-                            return;  // Skip first sample (no delta yet)
+                            return;
                         }
 
                         const history = this.metricsData[iface];
-                        const timeDelta = now - history.prevTime;
+                        const timeDelta = (now - history.prevTime) / 1000; // seconds
 
-                        // Calculate throughput (bytes/sec)
-                        const rxRate = (conn.transfer_rx_bytes - history.prevRxBytes) / timeDelta;
-                        const txRate = (conn.transfer_tx_bytes - history.prevTxBytes) / timeDelta;
+                        // Calculate rates (bytes per second) - EXACT COPY FROM CLASSIC VIEW
+                        const rxBytes = conn.transfer_rx_bytes || 0;
+                        const txBytes = conn.transfer_tx_bytes || 0;
 
-                        // Add to buffers
-                        history.timestamps.push(now);
-                        history.rx.push(rxRate);
-                        history.tx.push(txRate);
+                        let rawRxRate = 0;
+                        let rawTxRate = 0;
 
-                        // Limit to 120 points (2 minutes at 1-second intervals)
+                        if (timeDelta > 0.1 && timeDelta < 30) {
+                            const rxDelta = rxBytes - history.prevRx;
+                            const txDelta = txBytes - history.prevTx;
+
+                            rawRxRate = rxDelta / timeDelta;
+                            rawTxRate = txDelta / timeDelta;
+
+                            // Sanity check: if rate exceeds 1 Gbps, something is wrong
+                            const maxRate = 1024 * 1024 * 1024 / 8; // 1 Gbps in bytes/sec
+                            if (rawRxRate > maxRate) rawRxRate = 0;
+                            if (rawTxRate > maxRate) rawTxRate = 0;
+                        }
+
+                        history.prevRx = rxBytes;
+                        history.prevTx = txBytes;
+                        history.prevTime = now;
+
+                        // Apply noise floor: rates below 10 KB/s are treated as zero
+                        const noiseFloor = 10 * 1024; // 10 KB/s
+                        const cleanRxRate = rawRxRate > noiseFloor ? rawRxRate : 0;
+                        const cleanTxRate = rawTxRate > noiseFloor ? rawTxRate : 0;
+
+                        // Store cleaned rates
+                        history.rawRx.push(Math.max(0, cleanRxRate));
+                        history.rawTx.push(Math.max(0, cleanTxRate));
+
+                        // Keep last 30 raw samples for moving average calculation
+                        if (history.rawRx.length > 30) {
+                            history.rawRx.shift();
+                            history.rawTx.shift();
+                        }
+
+                        // Calculate simple moving average over last 10 samples - EXACT COPY FROM CLASSIC VIEW
+                        const windowSize = Math.min(10, history.rawRx.length);
+                        const recentRx = history.rawRx.slice(-windowSize);
+                        const recentTx = history.rawTx.slice(-windowSize);
+
+                        const smoothedRx = recentRx.reduce((a, b) => a + b, 0) / windowSize;
+                        const smoothedTx = recentTx.reduce((a, b) => a + b, 0) / windowSize;
+
+                        // Add to history (keep last 120 data points = 2 minutes at 1s polling)
+                        history.timestamps.push(Math.floor(now / 1000));
+                        history.rx.push(smoothedRx);
+                        history.tx.push(smoothedTx);
+
                         if (history.timestamps.length > 120) {
                             history.timestamps.shift();
                             history.rx.shift();
                             history.tx.shift();
                         }
-
-                        // Update previous values
-                        history.prevRxBytes = conn.transfer_rx_bytes;
-                        history.prevTxBytes = conn.transfer_tx_bytes;
-                        history.prevTime = now;
                     });
 
                     // Update charts if visible
@@ -1857,7 +1898,7 @@
                 const chartDiv = document.getElementById('throughput-chart');
                 if (!chartDiv) return;
 
-                // Simple chart data (no smoothing for better performance)
+                // EXACT COPY FROM CLASSIC VIEW - uPlot data format
                 const chartData = [
                     [...data.timestamps],
                     [...data.rx],
@@ -1866,90 +1907,57 @@
 
                 // Only create chart if it doesn't exist, otherwise just update data
                 if (!this.metricsCharts.throughput) {
+                    // EXACT COPY FROM CLASSIC VIEW - uPlot options
+                    const chartWidth = Math.max(chartDiv.clientWidth, 280);
+                    const chartHeight = 180;
                     const opts = {
-                        width: chartDiv.clientWidth - 20,
-                        height: 180,
-                        padding: [12, 12, 10, 0],
+                        width: chartWidth,
+                        height: chartHeight,
+                        padding: [10, 10, 10, 0],  // top, right, bottom, left
                         series: [
                             { label: 'Time' },
                             {
                                 label: 'Download',
-                                stroke: '#10b981',  // Emerald-500 - improved visibility
-                                fill: 'rgba(16, 185, 129, 0.08)',  // Subtle area fill
+                                stroke: 'rgb(34, 197, 94)',  // Green - EXACT COPY
+                                fill: 'rgba(34, 197, 94, 0.1)',
                                 width: 2,
-                                points: { show: false },  // No point markers for cleaner lines
-                                value: (self, rawValue) => rawValue == null ? '—' : this.formatBytes(rawValue) + '/s'
+                                value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
                             },
                             {
                                 label: 'Upload',
-                                stroke: '#06b6d4',  // Cyan-500 - better distinction from download
-                                fill: 'rgba(6, 182, 212, 0.08)',
+                                stroke: 'rgb(59, 130, 246)',  // Blue - EXACT COPY
+                                fill: 'rgba(59, 130, 246, 0.1)',
                                 width: 2,
-                                points: { show: false },
-                                value: (self, rawValue) => rawValue == null ? '—' : this.formatBytes(rawValue) + '/s'
+                                value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
                             }
                         ],
                         axes: [
-                            { show: false },  // X-axis (time) - hidden but maintains spacing
+                            { show: false },  // X-axis (time)
                             {  // Y-axis (bytes/s)
-                                stroke: '#64748b',  // Slightly darker for subtlety
-                                size: 70,
-                                font: "500 11px ui-monospace, 'SF Mono', monospace",
+                                stroke: '#9ca3af',
                                 grid: {
-                                    stroke: 'rgba(148, 163, 184, 0.06)',  // Very subtle gridlines
+                                    stroke: '#374151',
                                     width: 1
                                 },
-                                ticks: {
-                                    stroke: '#64748b',
-                                    width: 1,
-                                    size: 4
-                                },
                                 values: (self, ticks) => ticks.map(v => this.formatBytes(v) + '/s'),
-                                gap: 10,
-                                space: 40
+                                size: 70
                             }
                         ],
-                        scales: {
-                            y: {
-                                range: (self, dataMin, dataMax) => {
-                                    // Simple range padding - calculated ONCE per data update
-                                    const padding = (dataMax - dataMin) * 0.1;
-                                    return [
-                                        Math.max(0, dataMin - padding),
-                                        dataMax + padding
-                                    ];
-                                }
-                            }
-                        },
                         legend: { show: false },
                         cursor: {
-                            drag: { x: false, y: false },
-                            points: {
-                                size: 5,
-                                width: 1.5,
-                                stroke: (self, seriesIdx) => {
-                                    const colors = ['', '#10b981', '#06b6d4'];
-                                    return colors[seriesIdx];
-                                },
-                                fill: '#1a2333'
-                            },
-                            lock: false,
-                            focus: {
-                                prox: 16  // Snap to nearest point within 16px
-                            }
+                            drag: { x: false, y: false }
                         }
                     };
 
                     this.metricsCharts.throughput = new uPlot(opts, chartData, chartDiv);
                 } else {
-                    // Just update the data - same as classic view
+                    // EXACT COPY FROM CLASSIC VIEW - update existing chart
                     const chart = this.metricsCharts.throughput;
                     if (chart && chart.root && chart.root.isConnected) {
                         try {
                             chart.setData(chartData);
                         } catch (e) {
                             console.error('Chart update failed:', e);
-                            // Destroy broken chart
                             chart.destroy();
                             this.metricsCharts.throughput = null;
                         }
