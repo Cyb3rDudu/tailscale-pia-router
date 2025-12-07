@@ -1204,12 +1204,12 @@
                         const smoothedRx = recentRx.reduce((a, b) => a + b, 0) / windowSize;
                         const smoothedTx = recentTx.reduce((a, b) => a + b, 0) / windowSize;
 
-                        // Add to history (keep last 120 data points = 2 minutes at 1s polling)
+                        // Add to history (keep last 240 data points = 60 seconds at 250ms polling)
                         history.timestamps.push(Math.floor(now / 1000));
                         history.rx.push(smoothedRx);
                         history.tx.push(smoothedTx);
 
-                        if (history.timestamps.length > 120) {
+                        if (history.timestamps.length > 240) {
                             history.timestamps.shift();
                             history.rx.shift();
                             history.tx.shift();
@@ -1941,7 +1941,7 @@
                 const yMax = maxValue * 1.1;
 
                 // Chart dimensions
-                const padding = { top: 10, right: 10, bottom: 20, left: 60 };
+                const padding = { top: 10, right: 10, bottom: 20, left: 72 };
                 const chartWidth = width - padding.left - padding.right;
                 const chartHeight = height - padding.top - padding.bottom;
 
@@ -1981,35 +1981,53 @@
 
                 const pointCount = data.rx.length;
 
-                // Draw download line (green) - STRAIGHT LINES, no curves
-                ctx.strokeStyle = '#22c55e'; // Green (#74FF80 equivalent)
-                ctx.lineWidth = 1.5;
-                ctx.beginPath();
-                for (let i = 0; i < pointCount; i++) {
-                    const x = indexToX(i, pointCount);
-                    const y = dataToY(data.rx[i]);
-                    if (i === 0) {
-                        ctx.moveTo(x, y);
-                    } else {
-                        ctx.lineTo(x, y);
-                    }
-                }
-                ctx.stroke();
+                // Helper: Draw smooth Catmull-Rom curve through points
+                const drawSmoothCurve = (dataArray, color) => {
+                    if (pointCount < 2) return;
 
-                // Draw upload line (blue) - STRAIGHT LINES, no curves
-                ctx.strokeStyle = '#3b82f6'; // Blue (#78A7FF equivalent)
-                ctx.lineWidth = 1.5;
-                ctx.beginPath();
-                for (let i = 0; i < pointCount; i++) {
-                    const x = indexToX(i, pointCount);
-                    const y = dataToY(data.tx[i]);
-                    if (i === 0) {
-                        ctx.moveTo(x, y);
-                    } else {
-                        ctx.lineTo(x, y);
+                    // Build point array
+                    const points = [];
+                    for (let i = 0; i < pointCount; i++) {
+                        points.push({
+                            x: indexToX(i, pointCount),
+                            y: dataToY(dataArray[i])
+                        });
                     }
-                }
-                ctx.stroke();
+
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(points[0].x, points[0].y);
+
+                    if (pointCount === 2) {
+                        // Just draw a straight line for 2 points
+                        ctx.lineTo(points[1].x, points[1].y);
+                    } else {
+                        // Catmull-Rom curve through all points
+                        for (let i = 0; i < pointCount - 1; i++) {
+                            const p0 = points[i === 0 ? i : i - 1];
+                            const p1 = points[i];
+                            const p2 = points[i + 1];
+                            const p3 = points[i + 2 < pointCount ? i + 2 : i + 1];
+
+                            // Catmull-Rom to Bezier conversion (tension = 0.5)
+                            const cp1x = p1.x + (p2.x - p0.x) / 6;
+                            const cp1y = p1.y + (p2.y - p0.y) / 6;
+                            const cp2x = p2.x - (p3.x - p1.x) / 6;
+                            const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+                            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+                        }
+                    }
+
+                    ctx.stroke();
+                };
+
+                // Draw download line (green) - SMOOTH CURVES
+                drawSmoothCurve(data.rx, '#22c55e');
+
+                // Draw upload line (blue) - SMOOTH CURVES
+                drawSmoothCurve(data.tx, '#3b82f6');
 
                 // Optional: Draw small points on lines (only if performance allows)
                 // Commented out by default for maximum performance

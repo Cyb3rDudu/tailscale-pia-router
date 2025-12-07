@@ -249,7 +249,7 @@ async def get_connection_logs(limit: int = 50, offset: int = 0) -> ConnectionLog
 async def websocket_vpn_status(websocket: WebSocket):
     """WebSocket endpoint for real-time VPN status streaming.
 
-    Sends VPN connection status updates every second including:
+    Sends VPN connection status updates every 250ms (4 samples/second) including:
     - Active connections with throughput data
     - Interface details (handshake, transfer stats)
     """
@@ -295,8 +295,8 @@ async def websocket_vpn_status(websocket: WebSocket):
                     "timestamp": asyncio.get_event_loop().time()
                 })
 
-                # Wait 1 second before next update
-                await asyncio.sleep(1)
+                # Wait 250ms before next update (4 samples/second)
+                await asyncio.sleep(0.25)
 
             except Exception as e:
                 logger.error(f"Error in WebSocket update loop: {e}")
@@ -306,7 +306,7 @@ async def websocket_vpn_status(websocket: WebSocket):
                     "active_count": 0,
                     "connections": []
                 })
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.25)
 
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")
