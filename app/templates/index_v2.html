@@ -662,13 +662,17 @@
                         .attr('height', height)
                         .attr('viewBox', [0, 0, width, height]);
 
-                    // Calculate smart center based on endpoints
+                    // Global View: Fixed projection showing entire world
                     const { centerLon, centerLat, scale } = this.calculateMapCenter();
 
-                    // Create projection with smart centering
+                    // Calculate scale to fit world map in viewport
+                    // For Mercator projection, scale = viewport_width / (2π)
+                    const globalScale = (width / (2 * Math.PI)) * 0.95; // 0.95 for 5% padding
+
+                    // Create projection for Global View
                     const projection = d3.geoMercator()
                         .center([centerLon, centerLat])
-                        .scale((width / 6.5) * scale)
+                        .scale(globalScale)
                         .translate([width / 2, height / 2]);
 
                     // Create groups for layers (order matters for z-index)
@@ -871,7 +875,6 @@
 
                     // Check for overlaps and adjust radius if needed
                     let hasOverlap = false;
-                    const endpointList = Object.values(endpointNodes);
 
                     for (const meshNode of potentialDeviceNodes) {
                         for (const endpoint of endpointList) {
