@@ -665,16 +665,18 @@
                     const lonSpan = maxLon - minLon;
                     const latSpan = maxLat - minLat;
 
-                    // Add 20% padding
-                    const paddedLonSpan = lonSpan * 1.4;
-                    const paddedLatSpan = latSpan * 1.4;
+                    // Add padding to show more global context (endpoints occupy 60-70% of viewport)
+                    // Use more padding when map is expanded to maintain global view feeling
+                    const viewportPadding = this.mapExpanded ? 2.2 : 2.0;
+                    const paddedLonSpan = lonSpan * viewportPadding;
+                    const paddedLatSpan = latSpan * viewportPadding;
 
-                    // Calculate scale to fit all endpoints (conservative to ensure visibility)
+                    // Calculate scale to fit all endpoints with comfortable padding
                     const baseScale = this.networkGraph ? this.networkGraph.width / 6.5 : 100;
                     const scaleByLon = baseScale / (paddedLonSpan / 60); // 60 is reference span
                     const scaleByLat = baseScale / (paddedLatSpan / 40); // 40 is reference span
 
-                    const scale = Math.max(0.8, Math.min(1.8, Math.min(scaleByLon, scaleByLat)));
+                    const scale = Math.max(0.6, Math.min(1.5, Math.min(scaleByLon, scaleByLat)));
 
                     return { centerLon, centerLat, scale };
                 },
