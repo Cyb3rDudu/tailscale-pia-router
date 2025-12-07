@@ -670,8 +670,17 @@
                     }
                 },
 
-                // Fallback locations when ipapi.co fails
-                getFallbackLocation(countryCode) {
+                // Fallback locations when ipapi.co fails (by region ID for specificity)
+                getFallbackLocationByRegion(regionId, countryCode) {
+                    const id = regionId ? regionId.toLowerCase() : '';
+
+                    // Australia - specific cities
+                    if (id.includes('perth')) return { lat: -31.9505, lon: 115.8605, city: 'Perth', countryName: 'Australia', countryCode: 'AU' };
+                    if (id.includes('brisbane')) return { lat: -27.4698, lon: 153.0251, city: 'Brisbane', countryName: 'Australia', countryCode: 'AU' };
+                    if (id.includes('melbourne')) return { lat: -37.8136, lon: 144.9631, city: 'Melbourne', countryName: 'Australia', countryCode: 'AU' };
+                    if (id.includes('sydney')) return { lat: -33.8688, lon: 151.2093, city: 'Sydney', countryName: 'Australia', countryCode: 'AU' };
+
+                    // Country-level fallbacks
                     const fallbacks = {
                         'AU': { lat: -37.8136, lon: 144.9631, city: 'Melbourne', countryName: 'Australia' },
                         'JP': { lat: 35.6762, lon: 139.6503, city: 'Tokyo', countryName: 'Japan' },
@@ -683,7 +692,8 @@
                         'HK': { lat: 22.3193, lon: 114.1694, city: 'Hong Kong', countryName: 'Hong Kong' },
                         'IN': { lat: 19.0760, lon: 72.8777, city: 'Mumbai', countryName: 'India' }
                     };
-                    return fallbacks[countryCode] || { lat: 0, lon: 0, city: 'Unknown', countryName: 'Unknown' };
+                    const fallback = fallbacks[countryCode] || { lat: 0, lon: 0, city: 'Unknown', countryName: 'Unknown' };
+                    return { ...fallback, countryCode };
                 },
 
                 // Country center coordinates for grouping
@@ -835,11 +845,11 @@
                         // Try to guess country from region ID
                         const guessedCountry = regionId ? this.guessCountryFromRegion(regionId) : null;
                         const fallbackCountry = guessedCountry || 'AU'; // Default to Australia if can't guess
-                        const fallback = this.getFallbackLocation(fallbackCountry);
+                        const fallback = this.getFallbackLocationByRegion(regionId, fallbackCountry);
 
                         const metadata = {
                             ip: endpointIP,
-                            countryCode: fallbackCountry,  // Use fallbackCountry, not guessedCountry (ensures valid code)
+                            countryCode: fallback.countryCode,
                             countryName: fallback.countryName,
                             city: fallback.city,
                             lat: fallback.lat,
@@ -1611,22 +1621,25 @@
                                 .attr('class', 'endpoint-label-group')
                                 .classed('dimmed', isFiltered && this.selectedEndpoint !== node.region_id);
 
-                            // Country name (bold)
-                            labelGroup.append('text')
+                            // Country name (bold) using tspan for proper SVG multi-line
+                            const countryText = labelGroup.append('text')
                                 .attr('x', position.x)
                                 .attr('y', position.y)
-                                .attr('text-anchor', position.anchor)
+                                .attr('text-anchor', position.anchor);
+
+                            countryText.append('tspan')
+                                .attr('x', position.x)
+                                .attr('dy', 0)
                                 .style('font-size', '12px')
                                 .style('font-weight', 'bold')
                                 .style('fill', 'white')
                                 .text(node.countryName);
 
-                            // Cities as vertical list (one per line)
+                            // Cities as vertical list using tspans
                             node.cities.forEach((city, index) => {
-                                labelGroup.append('text')
+                                countryText.append('tspan')
                                     .attr('x', position.x)
-                                    .attr('y', position.y + 14 + (index * 12))  // 14px below country, then 12px per city
-                                    .attr('text-anchor', position.anchor)
+                                    .attr('dy', index === 0 ? '14' : '12')  // First city: 14px below country, rest: 12px apart
                                     .style('font-size', '10px')
                                     .style('fill', '#94a3b8')
                                     .text(city);
