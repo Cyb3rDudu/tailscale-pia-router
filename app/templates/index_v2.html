@@ -839,7 +839,7 @@
 
                         const metadata = {
                             ip: endpointIP,
-                            countryCode: guessedCountry || '??',
+                            countryCode: fallbackCountry,  // Use fallbackCountry, not guessedCountry (ensures valid code)
                             countryName: fallback.countryName,
                             city: fallback.city,
                             lat: fallback.lat,
