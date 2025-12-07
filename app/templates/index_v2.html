@@ -1336,7 +1336,9 @@
                                     isGroup: true,
                                     groupedEndpoints: group.endpoints,
                                     countryCode: group.countryCode,
+                                    countryName: group.countryName,
                                     city: group.city,
+                                    cities: group.cities,  // Array of city names for multi-line rendering
                                     lat: group.lat,
                                     lon: group.lon,
                                     locationUnknown: group.endpoints.some(e => this.endpointMetadata[e.endpoint_ip]?.locationUnknown),
