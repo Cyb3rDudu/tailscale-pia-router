@@ -144,8 +144,10 @@ async def reconciliation_loop():
     - VPN connections that should be up are actually up
     - Routing rules match the database configuration
     - Failed connections are automatically restored
+    - Device exit nodes match expected configuration (endpoint drift detection)
     """
     import subprocess
+    from app.services import get_tailscale_ssh_service
 
     logger.info("Starting reconciliation loop...")
 
@@ -164,6 +166,12 @@ async def reconciliation_loop():
             # Get services
             pia_service = get_pia_service()
             routing_service = get_routing_service()
+            tailscale_service = get_tailscale_service()
+            ssh_service = get_tailscale_ssh_service()
+
+            # Get the expected exit node IP (PIA container)
+            exit_node_status = await tailscale_service.get_exit_node_status()
+            expected_exit_node_ip = exit_node_status.get("tailscale_ip")
 
             # Track which connections should be active
             expected_connections = set()
@@ -246,6 +254,41 @@ async def reconciliation_loop():
                             logger.info(f"Reconciliation: Restored routing for {device['hostname']}")
                         else:
                             logger.error(f"Reconciliation: Failed to restore routing for {device['hostname']}")
+
+                # Check if device exit node matches expected (drift detection)
+                # Only check Linux devices (SSH-capable)
+                device_os = device.get("os", "").lower()
+                if device_os == "linux" and expected_exit_node_ip:
+                    try:
+                        # Get current exit node on device via SSH
+                        current_exit_node = await ssh_service.get_exit_node_via_ssh(
+                            device_target=device_ip,
+                            username="root",
+                            device_hostname=device['hostname']
+                        )
+
+                        # Check for drift (None means SSH failed, skip in that case)
+                        if current_exit_node is not None and current_exit_node != expected_exit_node_ip:
+                            logger.warning(
+                                f"Reconciliation: Exit node drift detected on {device['hostname']} "
+                                f"(current: {current_exit_node or 'none'}, expected: {expected_exit_node_ip}), restoring..."
+                            )
+
+                            # Restore correct exit node
+                            ssh_result = await ssh_service.set_exit_node_via_ssh(
+                                device_target=device_ip,
+                                exit_node_ip=expected_exit_node_ip,
+                                username="root",
+                                device_hostname=device['hostname']
+                            )
+
+                            if ssh_result and ssh_result.get("success"):
+                                logger.info(f"Reconciliation: Restored exit node on {device['hostname']}")
+                            else:
+                                logger.error(f"Reconciliation: Failed to restore exit node on {device['hostname']}")
+
+                    except Exception as e:
+                        logger.debug(f"Reconciliation: Could not check exit node on {device['hostname']}: {e}")
 
         except Exception as e:
             logger.error(f"Error in reconciliation loop: {e}", exc_info=True)

@@ -157,6 +157,56 @@ class TailscaleSSHService:
                 "method": "ssh"
             }
 
+    async def get_exit_node_via_ssh(
+        self,
+        device_target: str,
+        username: str = "root",
+        device_hostname: str = None
+    ) -> Optional[str]:
+        """Get current exit node setting on remote device via SSH.
+
+        Args:
+            device_target: Tailscale IP or hostname to SSH to
+            username: SSH username
+            device_hostname: Optional hostname for logging (if device_target is an IP)
+
+        Returns:
+            Exit node IP if set, empty string if no exit node, None if check failed
+        """
+        try:
+            # Use hostname for logging if provided, otherwise use target
+            log_name = device_hostname or device_target
+
+            cmd = [
+                "ssh",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "ConnectTimeout=5",
+                f"{username}@{device_target}",
+                "tailscale status --json 2>/dev/null | grep -oP '\"ExitNodeOption\":\\s*\"\\K[^\"]*' || echo ''"
+            ]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if result.returncode == 0:
+                exit_node = result.stdout.strip()
+                logger.debug(f"Current exit node on {log_name}: {exit_node if exit_node else 'none'}")
+                return exit_node
+            else:
+                logger.warning(f"Failed to get exit node from {log_name}: {result.stderr}")
+                return None
+
+        except subprocess.TimeoutExpired:
+            logger.warning(f"SSH timeout getting exit node from {log_name}")
+            return None
+        except Exception as e:
+            logger.warning(f"Exception getting exit node from {log_name}: {e}")
+            return None
+
     async def check_ssh_connectivity(
         self,
         device_target: str,
