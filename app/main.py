@@ -398,6 +398,12 @@ async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+@app.get("/v2", response_class=HTMLResponse)
+async def index_v2(request: Request):
+    """Redesigned dashboard page (Option A - Compact Layout)."""
+    return templates.TemplateResponse("index_v2.html", {"request": request})
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
     """Settings page."""

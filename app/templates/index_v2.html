@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>PIA Router</title>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom animations */
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+            50% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.2); }
+        }
+        .endpoint-pill.active {
+            animation: pulse-glow 2s infinite;
+        }
+
+        /* Smooth transitions */
+        .endpoint-pill, .device-card {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .endpoint-pill:hover {
+            transform: translateY(-2px);
+        }
+
+        /* Custom scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100" x-data="app()" x-init="init()">
+    <div class="min-h-screen flex flex-col">
+        <!-- Header -->
+        <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-6 py-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-8">
+                        <h1 class="text-2xl font-semibold text-slate-100">PIA Router</h1>
+
+                        <!-- Status Badges -->
+                        <div class="hidden md:flex items-center space-x-6">
+                            <div class="flex flex-col">
+                                <span class="text-xs text-slate-400">VPN Endpoints</span>
+                                <div class="flex items-center space-x-2 mt-1">
+                                    <div :class="vpnStatus.active_count > 0 ? 'bg-green-500' : 'bg-slate-500'"
+                                         class="w-2 h-2 rounded-full"></div>
+                                    <span class="text-sm font-medium">
+                                        <span x-text="vpnStatus.active_count"></span> active
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-col">
+                                <span class="text-xs text-slate-400">Tailscale</span>
+                                <div class="flex items-center space-x-2 mt-1">
+                                    <div :class="tailscaleStatus.running ? 'bg-green-500' : 'bg-red-500'"
+                                         class="w-2 h-2 rounded-full"></div>
+                                    <span class="text-sm font-medium" x-text="tailscaleStatus.running ? 'Connected' : 'Disconnected'"></span>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-col">
+                                <span class="text-xs text-slate-400">Devices Routed</span>
+                                <div class="flex items-center space-x-2 mt-1">
+                                    <span class="text-sm font-medium">
+                                        <span x-text="devices.filter(d => d.region_id).length"></span> / <span x-text="devices.length"></span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <a href="/settings" class="text-sm text-blue-400 hover:text-blue-300 font-medium">
+                        Settings
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 max-w-7xl mx-auto w-full px-6 py-6">
+            <!-- Endpoint Status Pills Section -->
+            <section class="mb-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold text-slate-100">VPN Endpoints</h2>
+                    <span class="text-sm text-slate-400" x-text="`${vpnStatus.active_count} active, ${vpnStatus.connections ? vpnStatus.connections.length - vpnStatus.active_count : 0} inactive`"></span>
+                </div>
+
+                <div class="space-y-2">
+                    <!-- Active Endpoints -->
+                    <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
+                        <div class="endpoint-pill active bg-slate-800 border rounded-lg px-4 py-3 flex items-center justify-between hover:bg-slate-700 cursor-pointer"
+                             :class="conn.interface ? 'border-green-600/50 bg-green-900/10' : 'border-slate-700'"
+                             @click="selectedEndpoint = selectedEndpoint === conn.region_id ? null : conn.region_id">
+
+                            <div class="flex items-center space-x-4 flex-1">
+                                <!-- Status Indicator -->
+                                <div class="flex items-center space-x-2">
+                                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                                    <span class="font-medium text-slate-100" x-text="conn.region_name"></span>
+                                </div>
+
+                                <!-- Device Count -->
+                                <div class="flex items-center space-x-1 text-sm">
+                                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                              d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                                    </svg>
+                                    <span class="text-slate-400">
+                                        <span x-text="devices.filter(d => d.region_id === conn.region_id).length"></span> devices
+                                    </span>
+                                </div>
+
+                                <!-- Latency (from last handshake) -->
+                                <div class="text-sm text-slate-400" x-show="conn.last_handshake">
+                                    <span x-text="conn.last_handshake"></span>
+                                </div>
+
+                                <!-- Throughput -->
+                                <div class="flex items-center space-x-3 text-sm">
+                                    <span class="text-green-400">
+                                        ↓ <span x-text="formatRate(getCurrentRate(conn.interface, 'rx'))"></span>
+                                    </span>
+                                    <span class="text-blue-400">
+                                        ↑ <span x-text="formatRate(getCurrentRate(conn.interface, 'tx'))"></span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Expand Toggle -->
+                            <div class="ml-4">
+                                <svg class="w-5 h-5 text-slate-400 transition-transform"
+                                     :class="selectedEndpoint === conn.region_id ? 'rotate-180' : ''"
+                                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                </svg>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- No Active Endpoints Message -->
+                    <div x-show="!vpnStatus.connections || vpnStatus.connections.length === 0"
+                         class="bg-slate-800 border border-slate-700 rounded-lg px-4 py-8 text-center">
+                        <p class="text-slate-400">No active VPN endpoints</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Device Routing Section -->
+            <section class="flex-1">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold text-slate-100">Device Routing</h2>
+                    <div class="flex items-center space-x-3">
+                        <input type="text"
+                               placeholder="Search devices..."
+                               x-model="deviceSearch"
+                               class="px-3 py-1.5 text-sm bg-slate-800 border border-slate-700 rounded-md text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                </div>
+
+                <div class="space-y-4 custom-scrollbar" style="max-height: calc(100vh - 400px); overflow-y: auto;">
+                    <!-- Devices Grouped by Endpoint -->
+                    <template x-for="conn in vpnStatus.connections" :key="'group-' + conn.region_id">
+                        <div x-show="devices.filter(d => d.region_id === conn.region_id && (!deviceSearch || d.hostname.toLowerCase().includes(deviceSearch.toLowerCase()))).length > 0">
+                            <!-- Group Header -->
+                            <details class="group" open>
+                                <summary class="flex items-center justify-between px-4 py-2 bg-slate-800/50 border border-slate-700 rounded-lg cursor-pointer hover:bg-slate-800 mb-2">
+                                    <div class="flex items-center space-x-3">
+                                        <svg class="w-4 h-4 text-slate-400 transition-transform group-open:rotate-90"
+                                             fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                                        </svg>
+                                        <span class="font-medium text-slate-200" x-text="conn.region_name"></span>
+                                        <span class="text-sm text-slate-400">
+                                            (<span x-text="devices.filter(d => d.region_id === conn.region_id).length"></span>)
+                                        </span>
+                                    </div>
+                                </summary>
+
+                                <!-- Device Cards -->
+                                <div class="mt-2 space-y-2">
+                                    <template x-for="device in devices.filter(d => d.region_id === conn.region_id && (!deviceSearch || d.hostname.toLowerCase().includes(deviceSearch.toLowerCase())))" :key="device.id">
+                                        <div class="device-card bg-slate-800 border border-slate-700 border-l-4 rounded-lg px-4 py-3 hover:bg-slate-700"
+                                             :class="device.routing_enabled ? 'border-l-green-500' : 'border-l-slate-500'">
+                                            <div class="flex items-center justify-between">
+                                                <!-- Device Info -->
+                                                <div class="flex items-center space-x-4 flex-1">
+                                                    <!-- Device Icon -->
+                                                    <div class="text-2xl">
+                                                        <span x-text="getDeviceIcon(device.os)"></span>
+                                                    </div>
+
+                                                    <!-- Device Details -->
+                                                    <div class="flex-1">
+                                                        <div class="flex items-center space-x-2">
+                                                            <span class="font-medium text-slate-100" x-text="device.hostname"></span>
+                                                            <span :class="device.online ? 'bg-green-500' : 'bg-slate-500'"
+                                                                  class="px-2 py-0.5 text-xs rounded-full">
+                                                                <span x-text="device.online ? 'Online' : 'Offline'"></span>
+                                                            </span>
+                                                        </div>
+                                                        <div class="flex items-center space-x-4 mt-1 text-sm text-slate-400">
+                                                            <span x-text="device.ip_addresses[0]"></span>
+                                                            <span x-text="device.os"></span>
+                                                            <span x-show="device.routing_enabled" class="text-green-400">
+                                                                ● Routing enabled
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Actions -->
+                                                <div class="flex items-center space-x-2">
+                                                    <!-- Region Dropdown -->
+                                                    <select @change="setDeviceRegion(device.id, $event.target.value)"
+                                                            class="px-3 py-1.5 text-sm bg-slate-700 border border-slate-600 rounded-md text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                                        <template x-for="region in regions" :key="region.id">
+                                                            <option :value="region.id"
+                                                                    :selected="device.region_id === region.id"
+                                                                    x-text="`${region.name} (${region.country})`"></option>
+                                                        </template>
+                                                    </select>
+
+                                                    <!-- Toggle Button -->
+                                                    <button @click="toggleDeviceRouting(device.id)"
+                                                            :disabled="!device.region_id"
+                                                            class="p-2 rounded-full transition-colors"
+                                                            :class="device.routing_enabled ? 'bg-red-900/50 text-red-400 hover:bg-red-900' : 'bg-green-900/50 text-green-400 hover:bg-green-900'"
+                                                            :title="device.routing_enabled ? 'Stop routing' : 'Start routing'">
+                                                        <!-- Play Icon -->
+                                                        <svg x-show="!device.routing_enabled" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                                            <path d="M8 5v14l11-7z"/>
+                                                        </svg>
+                                                        <!-- Stop Icon -->
+                                                        <svg x-show="device.routing_enabled" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                                            <path d="M6 6h12v12H6z"/>
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </details>
+                        </div>
+                    </template>
+
+                    <!-- Unrouted Devices Group -->
+                    <div x-show="devices.filter(d => !d.region_id && (!deviceSearch || d.hostname.toLowerCase().includes(deviceSearch.toLowerCase()))).length > 0">
+                        <details class="group" open>
+                            <summary class="flex items-center justify-between px-4 py-2 bg-slate-800/50 border border-slate-700 rounded-lg cursor-pointer hover:bg-slate-800 mb-2">
+                                <div class="flex items-center space-x-3">
+                                    <svg class="w-4 h-4 text-slate-400 transition-transform group-open:rotate-90"
+                                         fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+                                    </svg>
+                                    <span class="font-medium text-slate-200">Direct Connection</span>
+                                    <span class="text-sm text-slate-400">
+                                        (<span x-text="devices.filter(d => !d.region_id).length"></span>)
+                                    </span>
+                                </div>
+                            </summary>
+
+                            <div class="mt-2 space-y-2">
+                                <template x-for="device in devices.filter(d => !d.region_id && (!deviceSearch || d.hostname.toLowerCase().includes(deviceSearch.toLowerCase())))" :key="device.id">
+                                    <div class="device-card bg-slate-800 border border-slate-700 border-l-4 border-l-slate-500 rounded-lg px-4 py-3 hover:bg-slate-700">
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex items-center space-x-4 flex-1">
+                                                <div class="text-2xl">
+                                                    <span x-text="getDeviceIcon(device.os)"></span>
+                                                </div>
+
+                                                <div class="flex-1">
+                                                    <div class="flex items-center space-x-2">
+                                                        <span class="font-medium text-slate-100" x-text="device.hostname"></span>
+                                                        <span :class="device.online ? 'bg-green-500' : 'bg-slate-500'"
+                                                              class="px-2 py-0.5 text-xs rounded-full">
+                                                            <span x-text="device.online ? 'Online' : 'Offline'"></span>
+                                                        </span>
+                                                    </div>
+                                                    <div class="flex items-center space-x-4 mt-1 text-sm text-slate-400">
+                                                        <span x-text="device.ip_addresses[0]"></span>
+                                                        <span x-text="device.os"></span>
+                                                        <span class="text-slate-500">● Not routed</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div class="flex items-center space-x-2">
+                                                <select @change="setDeviceRegion(device.id, $event.target.value)"
+                                                        class="px-3 py-1.5 text-sm bg-slate-700 border border-slate-600 rounded-md text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                                    <option value="">Select region...</option>
+                                                    <template x-for="region in regions" :key="region.id">
+                                                        <option :value="region.id" x-text="`${region.name} (${region.country})`"></option>
+                                                    </template>
+                                                </select>
+
+                                                <button @click="toggleDeviceRouting(device.id)"
+                                                        disabled
+                                                        class="p-2 rounded-full bg-slate-700 text-slate-500 cursor-not-allowed"
+                                                        title="Select a region first">
+                                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                                        <path d="M8 5v14l11-7z"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // Store charts and history outside Alpine
+        const globalCharts = {};
+        const globalTransferHistory = {};
+
+        function app() {
+            return {
+                loading: false,
+                vpnStatus: { active_count: 0, connections: [] },
+                tailscaleStatus: { running: false },
+                systemHealth: { healthy: false },
+                regions: [],
+                devices: [],
+                selectedEndpoint: null,
+                deviceSearch: '',
+                pollInterval: null,
+                websocket: null,
+
+                async init() {
+                    await this.loadRegions();
+                    await this.refreshStatus();
+
+                    this.connectWebSocket();
+
+                    this.pollInterval = setInterval(() => {
+                        this.loadTailscaleStatus();
+                        this.loadSystemHealth();
+                        this.loadDevices();
+                    }, 5000);
+                },
+
+                connectWebSocket() {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const wsUrl = `${protocol}//${window.location.host}/api/status/ws/vpn-status`;
+
+                    this.websocket = new WebSocket(wsUrl);
+
+                    this.websocket.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.vpnStatus = {
+                                active_count: data.active_count,
+                                connections: data.connections
+                            };
+                        } catch (error) {
+                            console.error('Failed to parse WebSocket message:', error);
+                        }
+                    };
+
+                    this.websocket.onclose = () => {
+                        setTimeout(() => this.connectWebSocket(), 3000);
+                    };
+                },
+
+                async loadRegions() {
+                    try {
+                        const response = await fetch('/api/settings/regions');
+                        const data = await response.json();
+                        this.regions = data.regions;
+                    } catch (error) {
+                        console.error('Failed to load regions:', error);
+                    }
+                },
+
+                async refreshStatus() {
+                    await Promise.all([
+                        this.loadVPNStatus(),
+                        this.loadTailscaleStatus(),
+                        this.loadSystemHealth(),
+                        this.loadDevices()
+                    ]);
+                },
+
+                async loadVPNStatus() {
+                    try {
+                        const response = await fetch('/api/status/vpn');
+                        this.vpnStatus = await response.json();
+                    } catch (error) {
+                        console.error('Failed to load VPN status:', error);
+                    }
+                },
+
+                async loadTailscaleStatus() {
+                    try {
+                        const response = await fetch('/api/status/tailscale');
+                        this.tailscaleStatus = await response.json();
+                    } catch (error) {
+                        console.error('Failed to load Tailscale status:', error);
+                    }
+                },
+
+                async loadSystemHealth() {
+                    try {
+                        const response = await fetch('/api/status/health');
+                        this.systemHealth = await response.json();
+                    } catch (error) {
+                        console.error('Failed to load system health:', error);
+                    }
+                },
+
+                async loadDevices() {
+                    try {
+                        const response = await fetch('/api/devices');
+                        const data = await response.json();
+                        this.devices = data.devices;
+                    } catch (error) {
+                        console.error('Failed to load devices:', error);
+                    }
+                },
+
+                async setDeviceRegion(deviceId, regionId) {
+                    try {
+                        const response = await fetch(`/api/devices/${deviceId}/region`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ region_id: regionId || null })
+                        });
+
+                        if (response.ok) {
+                            await this.loadDevices();
+                            await this.loadVPNStatus();
+                        }
+                    } catch (error) {
+                        console.error('Failed to set device region:', error);
+                    }
+                },
+
+                async toggleDeviceRouting(deviceId) {
+                    try {
+                        const response = await fetch(`/api/devices/${deviceId}/toggle`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({})
+                        });
+
+                        if (response.ok) {
+                            await this.loadDevices();
+                            await this.loadVPNStatus();
+                        }
+                    } catch (error) {
+                        console.error('Failed to toggle device routing:', error);
+                    }
+                },
+
+                getCurrentRate(interface_name, direction) {
+                    const history = globalTransferHistory[interface_name];
+                    if (!history || !history[direction] || history[direction].length === 0) {
+                        return 0;
+                    }
+                    return history[direction][history[direction].length - 1];
+                },
+
+                formatRate(bytesPerSecond) {
+                    return formatBytes(bytesPerSecond) + '/s';
+                },
+
+                getDeviceIcon(os) {
+                    const icons = {
+                        'macOS': '💻',
+                        'iOS': '📱',
+                        'linux': '🖥️',
+                        'Linux': '🖥️',
+                        'Windows': '💻',
+                        'Android': '📱'
+                    };
+                    return icons[os] || '🖥️';
+                }
+            }
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+    </script>
+</body>
+</html>
