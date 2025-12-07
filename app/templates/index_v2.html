@@ -842,9 +842,9 @@
                         // Set opacity based on active state
                         ctx.globalAlpha = route.isActive ? 0.8 : 0.25;
 
-                        // Draw 2-3 moving dash segments per route
-                        const dashCount = 2;
-                        const dashLength = Math.floor(len * 0.12);  // 12% of path length
+                        // Draw smaller, fewer dash segments per route (GPU optimization)
+                        const dashCount = 1;
+                        const dashLength = Math.floor(len * 0.06);  // 6% of path length (smaller dashes)
 
                         for (let d = 0; d < dashCount; d++) {
                             // Calculate phase offset
@@ -857,7 +857,7 @@
 
                             ctx.beginPath();
                             ctx.strokeStyle = route.color;
-                            ctx.lineWidth = 2;
+                            ctx.lineWidth = 1.5;  // Thinner lines for less GPU work
                             ctx.lineCap = 'round';
                             ctx.lineJoin = 'round';
 
