@@ -44,7 +44,6 @@
             stroke-dasharray: 4 4;
             fill: none;
             opacity: 0.3;
-            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
         }
 
         .network-link-mesh.dimmed {
@@ -71,7 +70,6 @@
             stroke: #fbbf24;
             stroke-width: 3;
             opacity: 1;
-            filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.8));
         }
 
         /* Endpoint nodes (geographic PIA servers) - smaller with glow */
@@ -81,28 +79,25 @@
         }
 
         .endpoint-node circle {
-            filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.5));
+            /* GPU-friendly: removed drop-shadow filter */
         }
 
         .endpoint-node.dimmed circle {
             opacity: 0.3;
-            filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.2));
         }
 
         .endpoint-node:hover circle {
             transform: scale(1.2);
-            filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.8));
         }
 
         .endpoint-node.selected circle {
-            filter: brightness(1.3) drop-shadow(0 0 12px rgba(251, 191, 36, 0.9));
+            /* GPU-friendly: removed filter effects */
         }
 
-        /* Mesh nodes (Tailscale devices) - 3D depth with shadows */
+        /* Mesh nodes (Tailscale devices) - GPU-friendly without filters */
         .mesh-node {
             cursor: pointer;
             transition: all 0.3s ease;
-            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
         }
 
         .mesh-node.dimmed {
@@ -110,11 +105,11 @@
         }
 
         .mesh-node:hover {
-            filter: brightness(1.2) drop-shadow(0 6px 12px rgba(0, 0, 0, 0.6));
+            /* GPU-friendly: removed filter effects */
         }
 
         .mesh-node.selected {
-            filter: brightness(1.5) drop-shadow(0 0 12px rgba(59, 130, 246, 0.8));
+            /* GPU-friendly: removed filter effects */
         }
 
         /* Labels with dark halo for readability */
@@ -658,7 +653,7 @@
                     // Start WebSocket for real-time metrics
                     this.connectMetricsWebSocket();
 
-                    // Start GPU-friendly dash animation
+                    // Start dash animation (testing with filters removed)
                     this.startDashAnimation();
 
                     // Poll status every 5 seconds
