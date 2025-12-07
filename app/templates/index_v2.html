@@ -758,12 +758,18 @@
                         const totalLength = path.getTotalLength();
                         const samples = [];
 
+                        // Trim endpoints to avoid drawing on dots (14px node radius + 2px margin)
+                        const endpointTrim = 16;
+                        const trimmedLength = Math.max(0, totalLength - (2 * endpointTrim));
+
+                        if (trimmedLength <= 0) return; // Skip very short paths
+
                         // Sample points along path (1 point every 5px)
                         const sampleInterval = 5;
-                        const numSamples = Math.ceil(totalLength / sampleInterval);
+                        const numSamples = Math.ceil(trimmedLength / sampleInterval);
 
                         for (let i = 0; i <= numSamples; i++) {
-                            const distance = (i / numSamples) * totalLength;
+                            const distance = endpointTrim + (i / numSamples) * trimmedLength;
                             const point = path.getPointAtLength(distance);
                             samples.push({ x: point.x, y: point.y });
                         }
@@ -790,7 +796,8 @@
                             color,
                             isActive: !isDimmed,
                             zIndex: index,  // DOM order
-                            speed: 0.008  // Animation speed (faster movement)
+                            speed: 0.008,  // Animation speed (faster movement)
+                            totalLength: trimmedLength  // Store for dash length calculation
                         });
                     });
                 },
@@ -842,15 +849,20 @@
                         // Set opacity based on active state
                         ctx.globalAlpha = route.isActive ? 0.8 : 0.25;
 
-                        // Draw many small dashes covering ~50% of path
-                        const dashCount = 8;  // More dashes for fuller coverage
-                        const dashLength = Math.floor(len * 0.04);  // 4% of path length (tiny dashes)
+                        // Fixed-length dashes covering 50% of path
+                        const fixedDashLengthPx = 20;  // Fixed 20px dashes for consistency
+                        const sampleInterval = 5;  // Same as sampling interval
+                        const dashLengthSamples = Math.ceil(fixedDashLengthPx / sampleInterval);
+
+                        // Calculate dash count to cover 50% of path
+                        const totalDashLength = route.totalLength * 0.5;  // 50% coverage
+                        const dashCount = Math.max(1, Math.floor(totalDashLength / fixedDashLengthPx));
 
                         for (let d = 0; d < dashCount; d++) {
                             // Calculate phase offset
                             const offset = Math.floor((this.animationTime * route.speed + d * len / dashCount) % len);
                             const startIndex = Math.min(offset, len - 1);
-                            const endIndex = Math.min((offset + dashLength) % len, len - 1);
+                            const endIndex = Math.min((offset + dashLengthSamples) % len, len - 1);
 
                             // Safety check - ensure indices are valid
                             if (startIndex >= len || !pts[startIndex]) continue;
