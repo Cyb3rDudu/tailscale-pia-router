@@ -376,17 +376,81 @@
                                             </div>
                                         </td>
                                         <td class="px-3 py-2 text-slate-400 text-sm" x-text="device.ip_addresses[0]"></td>
-                                        <td class="px-3 py-2">
-                                            <select
-                                                @click.stop
-                                                @change="setDeviceRegion(device.id, $event.target.value)"
-                                                class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-white w-full"
-                                                :value="device.region_id || ''">
-                                                <option value="">No VPN</option>
-                                                <template x-for="region in regions" :key="region.id">
-                                                    <option :value="region.id" x-text="`${region.name} (${region.country})`"></option>
-                                                </template>
-                                            </select>
+                                        <td class="px-3 py-2" x-data="{
+                                            open: false,
+                                            search: '',
+                                            deviceId: device.id,
+                                            get filteredRegions() {
+                                                if (!this.search) return regions;
+                                                const s = this.search.toLowerCase();
+                                                return regions.filter(r =>
+                                                    r.name.toLowerCase().includes(s) ||
+                                                    r.country.toLowerCase().includes(s) ||
+                                                    r.id.toLowerCase().includes(s)
+                                                );
+                                            },
+                                            selectRegion(regionId) {
+                                                setDeviceRegion(this.deviceId, regionId);
+                                                this.open = false;
+                                                this.search = '';
+                                            }
+                                        }">
+                                            <div class="relative" @click.away="open = false">
+                                                <!-- Dropdown trigger -->
+                                                <button
+                                                    @click.stop="open = !open"
+                                                    class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-white w-full text-left flex items-center justify-between"
+                                                    type="button">
+                                                    <span x-text="device.region_id ? (regions.find(r => r.id === device.region_id)?.name || 'Unknown') : 'No VPN'"></span>
+                                                    <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                                    </svg>
+                                                </button>
+
+                                                <!-- Dropdown menu -->
+                                                <div
+                                                    x-show="open"
+                                                    x-cloak
+                                                    class="absolute z-50 mt-1 w-64 bg-slate-800 border border-slate-700 rounded shadow-xl max-h-80 overflow-hidden"
+                                                    style="display: none;">
+                                                    <!-- Search input -->
+                                                    <div class="p-2 border-b border-slate-700">
+                                                        <input
+                                                            x-model="search"
+                                                            @click.stop
+                                                            type="text"
+                                                            placeholder="Search regions..."
+                                                            class="w-full bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500">
+                                                    </div>
+
+                                                    <!-- Options list -->
+                                                    <div class="overflow-y-auto max-h-64">
+                                                        <!-- No VPN option -->
+                                                        <div
+                                                            @click.stop="selectRegion('')"
+                                                            class="px-3 py-2 text-sm text-white hover:bg-slate-700 cursor-pointer"
+                                                            :class="!device.region_id ? 'bg-slate-700' : ''">
+                                                            No VPN
+                                                        </div>
+
+                                                        <!-- Region options -->
+                                                        <template x-for="region in filteredRegions" :key="region.id">
+                                                            <div
+                                                                @click.stop="selectRegion(region.id)"
+                                                                class="px-3 py-2 text-sm text-white hover:bg-slate-700 cursor-pointer"
+                                                                :class="device.region_id === region.id ? 'bg-slate-700' : ''">
+                                                                <div class="font-medium" x-text="region.name"></div>
+                                                                <div class="text-xs text-slate-400" x-text="region.country"></div>
+                                                            </div>
+                                                        </template>
+
+                                                        <!-- No results -->
+                                                        <div x-show="search && filteredRegions.length === 0" class="px-3 py-2 text-sm text-slate-400 italic">
+                                                            No regions found
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </td>
                                         <td class="px-3 py-2 text-center">
                                             <button
@@ -622,41 +686,100 @@
                     return fallbacks[countryCode] || { lat: 0, lon: 0, city: 'Unknown', countryName: 'Unknown' };
                 },
 
-                // Group endpoints by physical location (lat/lon proximity)
+                // Country center coordinates for grouping
+                getCountryCenter(countryCode) {
+                    const centers = {
+                        'AU': { lat: -25.2744, lon: 133.7751 },  // Australia (geographic center)
+                        'US': { lat: 39.8283, lon: -98.5795 },   // United States (geographic center)
+                        'JP': { lat: 36.2048, lon: 138.2529 },   // Japan (geographic center)
+                        'SG': { lat: 1.3521, lon: 103.8198 },    // Singapore (city-state)
+                        'KH': { lat: 12.5657, lon: 104.9910 },   // Cambodia (geographic center)
+                        'MC': { lat: 43.7384, lon: 7.4246 },     // Monaco (city-state)
+                        'NZ': { lat: -40.9006, lon: 174.8860 },  // New Zealand (geographic center)
+                        'HK': { lat: 22.3193, lon: 114.1694 },   // Hong Kong (city-state)
+                        'IN': { lat: 20.5937, lon: 78.9629 }     // India (geographic center)
+                    };
+                    return centers[countryCode] || null;
+                },
+
+                // Group endpoints by country (single endpoint → city, multiple → country center)
                 groupEndpointsByLocation(connections) {
                     const groups = [];
                     const processed = new Set();
 
+                    // First, group by country code
+                    const byCountry = {};
                     connections.forEach(conn => {
-                        if (processed.has(conn.region_id)) return;
-
                         const metadata = this.endpointMetadata[conn.endpoint_ip];
                         if (!metadata || typeof metadata.lat !== 'number') return;
 
-                        // Find all connections at the same location (within 0.01 degrees ~1km)
-                        const sameLocation = connections.filter(c => {
-                            if (processed.has(c.region_id)) return false;
-                            const m = this.endpointMetadata[c.endpoint_ip];
-                            if (!m || typeof m.lat !== 'number') return false;
+                        // Exception: Treat US Alaska separately from other US regions
+                        const groupKey = (metadata.countryCode === 'US' && conn.region_id.toLowerCase().includes('alaska'))
+                            ? 'US-ALASKA'
+                            : metadata.countryCode;
 
-                            const latDiff = Math.abs(m.lat - metadata.lat);
-                            const lonDiff = Math.abs(m.lon - metadata.lon);
-                            return latDiff < 0.01 && lonDiff < 0.01;
-                        });
+                        if (!byCountry[groupKey]) {
+                            byCountry[groupKey] = [];
+                        }
+                        byCountry[groupKey].push(conn);
+                    });
 
-                        // Mark as processed
-                        sameLocation.forEach(c => processed.add(c.region_id));
+                    // Create groups based on country count
+                    Object.entries(byCountry).forEach(([groupKey, endpoints]) => {
+                        if (endpoints.length === 1) {
+                            // Single endpoint in country → use city location
+                            const conn = endpoints[0];
+                            const metadata = this.endpointMetadata[conn.endpoint_ip];
 
-                        // Create group
-                        groups.push({
-                            lat: metadata.lat,
-                            lon: metadata.lon,
-                            city: metadata.city,
-                            countryCode: metadata.countryCode,
-                            countryName: metadata.countryName,
-                            endpoints: sameLocation,
-                            isMulti: sameLocation.length > 1
-                        });
+                            groups.push({
+                                lat: metadata.lat,
+                                lon: metadata.lon,
+                                city: metadata.city,
+                                countryCode: metadata.countryCode,
+                                countryName: metadata.countryName,
+                                endpoints: endpoints,
+                                isMulti: false,
+                                isCityLevel: true
+                            });
+                        } else {
+                            // Multiple endpoints in country → use country center
+                            const firstMetadata = this.endpointMetadata[endpoints[0].endpoint_ip];
+                            const countryCode = groupKey === 'US-ALASKA' ? 'US' : groupKey;
+                            const center = this.getCountryCenter(countryCode);
+
+                            if (center) {
+                                // Collect all unique cities
+                                const cities = [...new Set(endpoints.map(e => {
+                                    const m = this.endpointMetadata[e.endpoint_ip];
+                                    return m?.city || 'Unknown';
+                                }).filter(c => c !== 'Unknown'))];
+
+                                groups.push({
+                                    lat: center.lat,
+                                    lon: center.lon,
+                                    city: null,  // No single city
+                                    cities: cities,  // List of cities
+                                    countryCode: firstMetadata.countryCode,
+                                    countryName: firstMetadata.countryName,
+                                    endpoints: endpoints,
+                                    isMulti: true,
+                                    isCityLevel: false
+                                });
+                            } else {
+                                // Fallback: use first endpoint's location
+                                const metadata = this.endpointMetadata[endpoints[0].endpoint_ip];
+                                groups.push({
+                                    lat: metadata.lat,
+                                    lon: metadata.lon,
+                                    city: metadata.city,
+                                    countryCode: metadata.countryCode,
+                                    countryName: metadata.countryName,
+                                    endpoints: endpoints,
+                                    isMulti: true,
+                                    isCityLevel: false
+                                });
+                            }
+                        }
                     });
 
                     return groups;
@@ -1192,9 +1315,11 @@
                             const [x, y] = projectedCoords;
 
                             if (group.isMulti) {
-                                // Multiple endpoints at same location - create grouped node
-                                const groupLabel = group.city ?
-                                    `${group.city} (${group.endpoints.length} endpoints)` :
+                                // Multiple endpoints in same country - create grouped node
+                                // Show country name + list of cities
+                                const cityList = group.cities ? group.cities.join(', ') : '';
+                                const groupLabel = cityList ?
+                                    `${group.countryName}: ${cityList}` :
                                     `${group.countryName} (${group.endpoints.length} endpoints)`;
 
                                 const groupNode = {
