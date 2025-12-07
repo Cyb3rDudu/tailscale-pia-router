@@ -630,6 +630,11 @@
                 websocket: null,
                 metricsData: {},  // { interface: { timestamps: [], rx: [], tx: [], rawRx: [], rawTx: [] } }
 
+                // Dash animation state
+                dashAnimationFrame: 0,
+                dashOffset: 0,
+                animationFrameId: null,
+
                 get filteredDevices() {
                     if (this.selectedEndpoint === null) return this.devices;
                     return this.devices.filter(d => d.region_id === this.selectedEndpoint && d.routing_enabled);
@@ -653,6 +658,9 @@
                     // Start WebSocket for real-time metrics
                     this.connectMetricsWebSocket();
 
+                    // Start GPU-friendly dash animation
+                    this.startDashAnimation();
+
                     // Poll status every 5 seconds
                     this.pollInterval = setInterval(() => {
                         this.refreshStatus();
@@ -665,6 +673,34 @@
                             this.resizeTopologyGraph();
                         });
                         this.resizeObserver.observe(container);
+                    }
+                },
+
+                startDashAnimation() {
+                    const animate = () => {
+                        this.dashAnimationFrame++;
+
+                        // Update every 4 frames (~15fps at 60fps screen refresh)
+                        if (this.dashAnimationFrame % 4 === 0) {
+                            this.dashOffset -= 1.5;  // Smooth movement
+
+                            // Update all VPN route paths
+                            const vpnPaths = document.querySelectorAll('.network-link-vpn');
+                            vpnPaths.forEach(path => {
+                                path.style.strokeDashoffset = this.dashOffset + 'px';
+                            });
+                        }
+
+                        this.animationFrameId = requestAnimationFrame(animate);
+                    };
+
+                    this.animationFrameId = requestAnimationFrame(animate);
+                },
+
+                stopDashAnimation() {
+                    if (this.animationFrameId) {
+                        cancelAnimationFrame(this.animationFrameId);
+                        this.animationFrameId = null;
                     }
                 },
 
