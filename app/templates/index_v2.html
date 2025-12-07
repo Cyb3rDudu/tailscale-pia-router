@@ -3,64 +3,131 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PIA Router - Topology View</title>
+    <title>PIA Router - Geographic Topology</title>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
     <style>
         /* Prevent scrolling on main viewport */
         html, body {
             overflow-x: hidden;
             max-width: 100vw;
+            background: #0a0e1a;
         }
 
-        /* Graph styles */
+        /* Topology container */
+        #topology-graph {
+            background: linear-gradient(135deg, #0a0e1a 0%, #0f172a 100%);
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* World map layer */
+        .map-layer path {
+            fill: #1e3a5f;
+            stroke: #334155;
+            stroke-width: 0.5px;
+            opacity: 0.25;
+        }
+
+        /* Mesh connection lines */
         .network-link-mesh {
             stroke: #475569;
             stroke-width: 1;
             stroke-dasharray: 4 4;
             fill: none;
-            opacity: 0.4;
+            opacity: 0.3;
         }
+
+        /* VPN route lines */
         .network-link-vpn {
-            stroke: #3b82f6;
+            stroke: #60a5fa;
             stroke-width: 2;
             fill: none;
-            opacity: 0.8;
+            opacity: 0.7;
+            stroke-dasharray: 6 4;
+            animation: dash-route 20s linear infinite;
         }
-        .network-link-vpn.animated {
-            stroke-dasharray: 5 5;
-            animation: dash 1s linear infinite;
+
+        .network-link-vpn:hover,
+        .network-link-vpn.highlighted {
+            stroke: #fbbf24;
+            stroke-width: 3;
+            opacity: 1;
+            filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.8));
         }
-        @keyframes dash {
+
+        @keyframes dash-route {
             to {
-                stroke-dashoffset: -10;
+                stroke-dashoffset: -200;
             }
         }
-        .network-node {
+
+        /* Endpoint nodes (geographic PIA servers) */
+        .endpoint-node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+            filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.6));
+        }
+
+        .endpoint-node:hover {
+            transform: scale(1.15);
+            filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.9));
+        }
+
+        .endpoint-node.selected {
+            filter: brightness(1.5) drop-shadow(0 0 12px rgba(251, 191, 36, 0.9));
+        }
+
+        /* Mesh nodes (Tailscale devices) */
+        .mesh-node {
             cursor: pointer;
             transition: all 0.3s ease;
         }
-        .network-node:hover {
+
+        .mesh-node:hover {
             filter: brightness(1.2);
         }
-        .network-node.selected {
-            filter: brightness(1.3);
+
+        .mesh-node.selected {
+            filter: brightness(1.5) drop-shadow(0 0 8px rgba(59, 130, 246, 0.8));
         }
 
-        /* Device table styles */
-        .device-table {
-            font-size: 14px;
+        /* Labels */
+        .endpoint-label {
+            font-size: 11px;
+            font-weight: 600;
+            fill: #ffffff;
+            text-shadow: 0 0 4px rgba(0, 0, 0, 0.8), 0 0 8px rgba(0, 0, 0, 0.6);
+            pointer-events: none;
         }
-        .device-row {
-            height: 40px;
-            transition: background-color 0.2s ease;
+
+        .mesh-label {
+            font-size: 10px;
+            font-weight: 500;
+            fill: #e2e8f0;
+            text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+            pointer-events: none;
         }
-        .device-row:hover {
-            background-color: rgba(59, 130, 246, 0.1);
+
+        /* All Endpoints pill */
+        .all-endpoints-pill {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            border: 1px solid #475569;
+            transition: all 0.3s ease;
         }
-        .device-row.selected {
-            background-color: rgba(59, 130, 246, 0.2);
+
+        .all-endpoints-pill.active {
+            background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+        }
+
+        .all-endpoints-pill:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
         /* Endpoint pill styles */
@@ -68,46 +135,63 @@
             transition: all 0.3s ease;
             cursor: pointer;
         }
+
         .endpoint-pill:hover {
             transform: translateY(-2px);
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
+
         .endpoint-pill.active {
-            background-color: rgba(59, 130, 246, 0.2);
+            background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
             border-color: #3b82f6;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
         }
 
-        /* Compact status indicators */
+        /* Device table styles */
+        .device-table {
+            font-size: 14px;
+        }
+
+        .device-row {
+            height: 40px;
+            transition: background-color 0.2s ease;
+        }
+
+        .device-row:hover {
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+
+        .device-row.selected {
+            background-color: rgba(59, 130, 246, 0.2);
+        }
+
+        /* Status indicators */
         .status-dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
         }
 
-        /* Graph container */
-        #topology-graph {
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-            border-radius: 8px;
-        }
-
         /* Custom scrollbar for device table */
         .device-table-container::-webkit-scrollbar {
             width: 6px;
         }
+
         .device-table-container::-webkit-scrollbar-track {
             background: #1e293b;
         }
+
         .device-table-container::-webkit-scrollbar-thumb {
             background: #475569;
             border-radius: 3px;
         }
     </style>
 </head>
-<body class="bg-slate-900 text-slate-100" x-data="app()" x-init="init()">
+<body class="bg-slate-950 text-slate-100" x-data="app()" x-init="init()">
     <!-- Header (60px) -->
-    <header class="bg-slate-800 border-b border-slate-700 px-6 py-3">
+    <header class="bg-slate-900 border-b border-slate-800 px-6 py-3">
         <div class="flex items-center justify-between">
-            <h1 class="text-xl font-bold text-white">PIA Router - Topology View</h1>
+            <h1 class="text-xl font-bold text-white">PIA Router - Geographic Topology</h1>
             <div class="flex items-center space-x-6">
                 <!-- Compact Status Indicators -->
                 <div class="flex items-center space-x-2">
@@ -129,12 +213,25 @@
     </header>
 
     <!-- Endpoint Pills (80px) -->
-    <div class="bg-slate-800 border-b border-slate-700 px-6 py-3">
+    <div class="bg-slate-900 border-b border-slate-800 px-6 py-3">
         <div class="flex items-center space-x-3 overflow-x-auto">
-            <span class="text-sm text-slate-400 flex-shrink-0">Active Endpoints:</span>
+            <span class="text-sm text-slate-400 flex-shrink-0">Filter:</span>
+
+            <!-- All Endpoints Pill -->
+            <div
+                class="all-endpoints-pill flex items-center space-x-2 rounded-lg px-4 py-2 flex-shrink-0"
+                :class="selectedEndpoint === null ? 'active' : ''"
+                @click="clearEndpointFilter()">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span class="font-semibold text-white text-sm">All Endpoints</span>
+            </div>
+
+            <!-- Endpoint Pills -->
             <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
                 <div
-                    class="endpoint-pill flex items-center space-x-3 bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 flex-shrink-0"
+                    class="endpoint-pill flex items-center space-x-3 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 flex-shrink-0"
                     :class="selectedEndpoint === conn.region_id ? 'active' : ''"
                     @click="toggleEndpointFilter(conn.region_id)">
                     <div class="w-2 h-2 rounded-full bg-green-500"></div>
@@ -151,9 +248,9 @@
     <!-- Main Content: Split View (Graph 60% + Table 40%) -->
     <main class="px-6 py-4" style="height: calc(100vh - 140px);">
         <div class="flex space-x-4 h-full">
-            <!-- LEFT: Topology Graph (60% width) -->
+            <!-- LEFT: Geographic Topology (60% width) -->
             <div class="w-3/5 flex-shrink-0">
-                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4 h-full flex flex-col">
+                <div class="bg-slate-900 rounded-lg border border-slate-800 p-4 h-full flex flex-col">
                     <h2 class="text-lg font-semibold text-white mb-3">Network Topology</h2>
                     <div id="topology-graph" class="flex-1 min-h-0"></div>
                 </div>
@@ -161,16 +258,16 @@
 
             <!-- RIGHT: Device Routing Table (40% width) -->
             <div class="w-2/5 flex-shrink-0">
-                <div class="bg-slate-800 rounded-lg border border-slate-700 p-4 h-full flex flex-col">
+                <div class="bg-slate-900 rounded-lg border border-slate-800 p-4 h-full flex flex-col">
                     <div class="flex items-center justify-between mb-3">
                         <h2 class="text-lg font-semibold text-white">Device Routing</h2>
-                        <span class="text-sm text-slate-400"><span x-text="devices.length"></span> devices</span>
+                        <span class="text-sm text-slate-400"><span x-text="filteredDevices.length"></span> / <span x-text="devices.length"></span> devices</span>
                     </div>
 
                     <!-- Scrollable table container -->
                     <div class="device-table-container flex-1 min-h-0 overflow-y-auto">
                         <table class="device-table w-full">
-                            <thead class="sticky top-0 bg-slate-700 text-slate-300 text-xs uppercase">
+                            <thead class="sticky top-0 bg-slate-800 text-slate-300 text-xs uppercase">
                                 <tr>
                                     <th class="px-3 py-2 text-left">Device</th>
                                     <th class="px-3 py-2 text-left">IP</th>
@@ -181,7 +278,7 @@
                             <tbody>
                                 <template x-for="device in filteredDevices" :key="device.id">
                                     <tr
-                                        class="device-row border-b border-slate-700"
+                                        class="device-row border-b border-slate-800"
                                         :class="selectedDevice === device.id ? 'selected' : ''"
                                         @click="selectDevice(device.id)">
                                         <td class="px-3 py-2">
@@ -195,7 +292,7 @@
                                             <select
                                                 @click.stop
                                                 @change="setDeviceRegion(device.id, $event.target.value)"
-                                                class="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white w-full"
+                                                class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-white w-full"
                                                 :value="device.region_id || ''">
                                                 <option value="">No VPN</option>
                                                 <template x-for="region in regions" :key="region.id">
@@ -208,7 +305,7 @@
                                                 @click.stop="toggleDeviceRouting(device.id)"
                                                 :disabled="!device.region_id"
                                                 class="w-8 h-8 rounded-full transition-colors"
-                                                :class="device.routing_enabled ? 'bg-red-600 hover:bg-red-700' : (device.region_id ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-600 cursor-not-allowed')"
+                                                :class="device.routing_enabled ? 'bg-red-600 hover:bg-red-700' : (device.region_id ? 'bg-green-600 hover:bg-green-700' : 'bg-slate-700 cursor-not-allowed')"
                                                 :title="device.routing_enabled ? 'Stop routing' : (device.region_id ? 'Start routing' : 'Select region first')">
                                                 <!-- Play Icon -->
                                                 <svg x-show="!device.routing_enabled" class="w-4 h-4 mx-auto" fill="currentColor" viewBox="0 0 24 24">
@@ -224,7 +321,7 @@
                                 </template>
                             </tbody>
                         </table>
-                        <div x-show="devices.length === 0" class="text-center py-8 text-slate-500">
+                        <div x-show="filteredDevices.length === 0" class="text-center py-8 text-slate-500">
                             No devices found
                         </div>
                     </div>
@@ -234,6 +331,43 @@
     </main>
 
     <script>
+        // Geographic coordinates for PIA regions
+        const REGION_COORDINATES = {
+            'sg': { lat: 1.3521, lng: 103.8198, name: 'Singapore' },
+            'kh': { lat: 11.5564, lng: 104.9282, name: 'Cambodia' },
+            'us-alaska': { lat: 61.2181, lng: -149.9003, name: 'US Alaska' },
+            'au-melbourne': { lat: -37.8136, lng: 144.9631, name: 'AU Melbourne' },
+            'au-sydney': { lat: -33.8688, lng: 151.2093, name: 'AU Sydney' },
+            'au-perth': { lat: -31.9505, lng: 115.8605, name: 'AU Perth' },
+            'jp': { lat: 35.6762, lng: 139.6503, name: 'Japan' },
+            'hk': { lat: 22.3193, lng: 114.1694, name: 'Hong Kong' },
+            'in': { lat: 19.0760, lng: 72.8777, name: 'India' },
+            'nz': { lat: -36.8485, lng: 174.7633, name: 'New Zealand' },
+            'uk': { lat: 51.5074, lng: -0.1278, name: 'UK London' },
+            'de': { lat: 52.5200, lng: 13.4050, name: 'Germany' },
+            'fr': { lat: 48.8566, lng: 2.3522, name: 'France' },
+            'nl': { lat: 52.3676, lng: 4.9041, name: 'Netherlands' },
+            'us-california': { lat: 37.7749, lng: -122.4194, name: 'US California' },
+            'us-newyork': { lat: 40.7128, lng: -74.0060, name: 'US New York' },
+            'us-texas': { lat: 29.7604, lng: -95.3698, name: 'US Texas' },
+            'ca': { lat: 43.6532, lng: -79.3832, name: 'Canada' },
+            'br': { lat: -23.5505, lng: -46.6333, name: 'Brazil' },
+            'za': { lat: -33.9249, lng: 18.4241, name: 'South Africa' }
+        };
+
+        // Utility: debounce function
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
         function app() {
             return {
                 loading: false,
@@ -242,25 +376,32 @@
                 systemHealth: { healthy: false, messages: [] },
                 regions: [],
                 devices: [],
-                selectedEndpoint: null,
+                selectedEndpoint: null,  // null = "All Endpoints"
                 selectedDevice: null,
                 pollInterval: null,
                 networkGraph: null,
+                resizeHandler: null,
 
                 get filteredDevices() {
-                    if (!this.selectedEndpoint) return this.devices;
-                    return this.devices.filter(d => d.region_id === this.selectedEndpoint);
+                    if (this.selectedEndpoint === null) return this.devices;
+                    return this.devices.filter(d => d.region_id === this.selectedEndpoint && d.routing_enabled);
                 },
 
                 async init() {
                     await this.loadRegions();
                     await this.refreshStatus();
-                    this.initTopologyGraph();
+                    await this.initTopologyGraph();
 
                     // Poll status every 5 seconds
                     this.pollInterval = setInterval(() => {
                         this.refreshStatus();
                     }, 5000);
+
+                    // Add resize handler with debouncing
+                    this.resizeHandler = debounce(() => {
+                        this.resizeTopologyGraph();
+                    }, 250);
+                    window.addEventListener('resize', this.resizeHandler);
                 },
 
                 async loadRegions() {
@@ -364,6 +505,13 @@
                     }
                 },
 
+                clearEndpointFilter() {
+                    this.selectedEndpoint = null;
+                    this.$nextTick(() => {
+                        this.updateTopologyGraph();
+                    });
+                },
+
                 toggleEndpointFilter(regionId) {
                     if (this.selectedEndpoint === regionId) {
                         this.selectedEndpoint = null;
@@ -386,7 +534,7 @@
                     });
                 },
 
-                initTopologyGraph() {
+                async initTopologyGraph() {
                     const container = document.getElementById('topology-graph');
                     if (!container) return;
 
@@ -403,84 +551,134 @@
                         .attr('height', height)
                         .attr('viewBox', [0, 0, width, height]);
 
-                    // Create groups for links and nodes
-                    const linkGroup = svg.append('g').attr('class', 'links');
-                    const nodeGroup = svg.append('g').attr('class', 'nodes');
+                    // Create projection for world map
+                    const projection = d3.geoMercator()
+                        .center([60, 10])  // Center between Asia and Australia
+                        .scale(width / 6.5)
+                        .translate([width / 2, height / 2]);
 
-                    this.networkGraph = { svg, linkGroup, nodeGroup, width, height };
+                    // Create groups for layers (order matters for z-index)
+                    const mapLayer = svg.append('g').attr('class', 'map-layer');
+                    const routesLayer = svg.append('g').attr('class', 'routes-layer');
+                    const meshLayer = svg.append('g').attr('class', 'mesh-layer');
+                    const meshNodesLayer = svg.append('g').attr('class', 'mesh-nodes-layer');
+                    const endpointNodesLayer = svg.append('g').attr('class', 'endpoint-nodes-layer');
+                    const labelsLayer = svg.append('g').attr('class', 'labels-layer');
+
+                    this.networkGraph = {
+                        svg,
+                        projection,
+                        mapLayer,
+                        routesLayer,
+                        meshLayer,
+                        meshNodesLayer,
+                        endpointNodesLayer,
+                        labelsLayer,
+                        width,
+                        height
+                    };
+
+                    // Load world map
+                    await this.loadWorldMap();
+                },
+
+                async loadWorldMap() {
+                    if (!this.networkGraph) return;
+
+                    try {
+                        // Load world topology data
+                        const world = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
+                        const countries = topojson.feature(world, world.objects.countries);
+
+                        // Draw countries
+                        this.networkGraph.mapLayer
+                            .selectAll('path')
+                            .data(countries.features)
+                            .enter()
+                            .append('path')
+                            .attr('d', d3.geoPath().projection(this.networkGraph.projection));
+
+                    } catch (error) {
+                        console.error('Failed to load world map:', error);
+                    }
+                },
+
+                resizeTopologyGraph() {
+                    if (!this.networkGraph) return;
+
+                    const container = document.getElementById('topology-graph');
+                    const newWidth = container.clientWidth;
+                    const newHeight = container.clientHeight;
+
+                    // Update SVG dimensions
+                    this.networkGraph.svg
+                        .attr('width', newWidth)
+                        .attr('height', newHeight)
+                        .attr('viewBox', [0, 0, newWidth, newHeight]);
+
+                    // Update projection
+                    this.networkGraph.projection
+                        .scale(newWidth / 6.5)
+                        .translate([newWidth / 2, newHeight / 2]);
+
+                    // Update dimensions
+                    this.networkGraph.width = newWidth;
+                    this.networkGraph.height = newHeight;
+
+                    // Redraw map
+                    this.networkGraph.mapLayer
+                        .selectAll('path')
+                        .attr('d', d3.geoPath().projection(this.networkGraph.projection));
+
+                    // Redraw topology
+                    this.updateTopologyGraph();
+                },
+
+                getRegionCoordinates(regionId) {
+                    // Try to match region ID to known coordinates
+                    for (const [key, coords] of Object.entries(REGION_COORDINATES)) {
+                        if (regionId.toLowerCase().includes(key) || key.includes(regionId.toLowerCase())) {
+                            return coords;
+                        }
+                    }
+                    // Default to center if unknown
+                    return { lat: 0, lng: 60, name: 'Unknown' };
                 },
 
                 updateTopologyGraph() {
                     if (!this.networkGraph) return;
 
-                    const { svg, linkGroup, nodeGroup, width, height } = this.networkGraph;
+                    const { svg, projection, routesLayer, meshLayer, meshNodesLayer, endpointNodesLayer, labelsLayer, width, height } = this.networkGraph;
 
-                    // Build graph data with FIXED positions
+                    // Build graph data
                     const nodes = [];
                     const links = [];
                     const centerX = width / 2;
                     const centerY = height / 2;
-                    const meshRadius = Math.min(width, height) * 0.3;
+                    const meshRadius = Math.min(width, height) * 0.28;
 
-                    // Position PIA exit nodes on left and right
-                    const piaNodes = {};
-                    const leftPiaNodes = [];
-                    const rightPiaNodes = [];
+                    // Create endpoint nodes at geographic locations
+                    const endpointNodes = {};
+                    this.vpnStatus.connections.forEach((conn) => {
+                        const coords = this.getRegionCoordinates(conn.region_id);
+                        const [x, y] = projection([coords.lng, coords.lat]);
 
-                    this.vpnStatus.connections.forEach((conn, idx) => {
-                        const nodeId = `pia-${conn.region_id}`;
-                        const isLeft = idx % 2 === 0;
-                        const side = isLeft ? leftPiaNodes : rightPiaNodes;
-
-                        const piaNode = {
-                            id: nodeId,
+                        const endpointNode = {
+                            id: `endpoint-${conn.region_id}`,
                             label: conn.region_name,
-                            type: 'pia',
+                            type: 'endpoint',
                             region_id: conn.region_id,
-                            isLeft: isLeft,
-                            sideIndex: side.length
+                            x: x,
+                            y: y
                         };
 
-                        side.push(piaNode);
-                        nodes.push(piaNode);
-                        piaNodes[conn.region_id] = piaNode;
+                        nodes.push(endpointNode);
+                        endpointNodes[conn.region_id] = endpointNode;
                     });
 
-                    // Position left PIA nodes
-                    leftPiaNodes.forEach((node, idx) => {
-                        node.x = 80;
-                        node.y = centerY + (idx - (leftPiaNodes.length - 1) / 2) * 80;
-                    });
-
-                    // Position right PIA nodes
-                    rightPiaNodes.forEach((node, idx) => {
-                        node.x = width - 80;
-                        node.y = centerY + (idx - (rightPiaNodes.length - 1) / 2) * 80;
-                    });
-
-                    // Order devices intelligently
-                    const leftSideDevices = [];
-                    const rightSideDevices = [];
-                    const unroutedDevices = [];
-
-                    this.devices.forEach(device => {
-                        if (device.region_id && piaNodes[device.region_id]) {
-                            const piaNode = piaNodes[device.region_id];
-                            if (piaNode.isLeft) {
-                                leftSideDevices.push(device);
-                            } else {
-                                rightSideDevices.push(device);
-                            }
-                        } else {
-                            unroutedDevices.push(device);
-                        }
-                    });
-
-                    const orderedDevices = [...leftSideDevices, ...unroutedDevices, ...rightSideDevices];
-
-                    // Position devices in a ring
-                    const deviceCount = orderedDevices.length;
-                    orderedDevices.forEach((device, idx) => {
+                    // Position devices in circular mesh
+                    const deviceCount = this.devices.length;
+                    this.devices.forEach((device, idx) => {
                         const angle = (idx / deviceCount) * 2 * Math.PI - Math.PI / 2;
 
                         nodes.push({
@@ -496,22 +694,22 @@
                         });
                     });
 
-                    // Add VPN connections (render first, behind mesh)
+                    // Add VPN route lines (device → endpoint)
                     const deviceNodes = nodes.filter(n => n.type === 'device');
                     deviceNodes.forEach(deviceNode => {
                         if (deviceNode.region_id && deviceNode.routing_enabled) {
-                            const piaNode = piaNodes[deviceNode.region_id];
-                            if (piaNode) {
+                            const endpointNode = endpointNodes[deviceNode.region_id];
+                            if (endpointNode) {
                                 links.push({
                                     source: deviceNode,
-                                    target: piaNode,
+                                    target: endpointNode,
                                     type: 'vpn'
                                 });
                             }
                         }
                     });
 
-                    // Add mesh connections (render last, on top)
+                    // Add mesh connections between devices
                     for (let i = 0; i < deviceNodes.length; i++) {
                         for (let j = i + 1; j < deviceNodes.length; j++) {
                             links.push({
@@ -522,73 +720,113 @@
                         }
                     }
 
-                    // Update links
-                    const link = linkGroup.selectAll('line')
-                        .data(links, d => `${d.source.id}-${d.target.id}`);
+                    // Update route lines
+                    const routeLink = routesLayer.selectAll('line')
+                        .data(links.filter(l => l.type === 'vpn'), d => `${d.source.id}-${d.target.id}`);
 
-                    link.exit().remove();
+                    routeLink.exit().remove();
 
-                    const linkEnter = link.enter()
+                    routeLink.enter()
                         .append('line')
-                        .attr('class', d => d.type === 'mesh' ? 'network-link-mesh' : 'network-link-vpn animated');
-
-                    linkEnter.merge(link)
+                        .attr('class', 'network-link-vpn')
+                        .merge(routeLink)
                         .attr('x1', d => d.source.x)
                         .attr('y1', d => d.source.y)
                         .attr('x2', d => d.target.x)
                         .attr('y2', d => d.target.y);
 
-                    // Update nodes
-                    const node = nodeGroup.selectAll('g')
-                        .data(nodes, d => d.id);
+                    // Update mesh lines
+                    const meshLink = meshLayer.selectAll('line')
+                        .data(links.filter(l => l.type === 'mesh'), d => `${d.source.id}-${d.target.id}`);
 
-                    node.exit().remove();
+                    meshLink.exit().remove();
 
-                    const nodeEnter = node.enter()
+                    meshLink.enter()
+                        .append('line')
+                        .attr('class', 'network-link-mesh')
+                        .merge(meshLink)
+                        .attr('x1', d => d.source.x)
+                        .attr('y1', d => d.source.y)
+                        .attr('x2', d => d.target.x)
+                        .attr('y2', d => d.target.y);
+
+                    // Update mesh nodes
+                    const meshNode = meshNodesLayer.selectAll('g')
+                        .data(deviceNodes, d => d.id);
+
+                    meshNode.exit().remove();
+
+                    const meshNodeEnter = meshNode.enter()
                         .append('g')
-                        .attr('class', 'network-node')
+                        .attr('class', 'mesh-node')
                         .on('click', (event, d) => {
-                            if (d.type === 'device') {
-                                this.selectDevice(d.device_id);
-                            } else if (d.type === 'pia') {
-                                this.toggleEndpointFilter(d.region_id);
-                            }
+                            this.selectDevice(d.device_id);
                         });
 
-                    nodeEnter.append('circle')
-                        .attr('r', d => d.type === 'pia' ? 20 : 16);
+                    meshNodeEnter.append('circle').attr('r', 16);
 
-                    nodeEnter.append('text')
-                        .attr('dy', 30)
-                        .attr('text-anchor', 'middle')
-                        .attr('class', 'text-white')
-                        .style('font-size', '10px')
-                        .style('font-weight', '500');
+                    const allMeshNodes = meshNodeEnter.merge(meshNode);
 
-                    const allNodes = nodeEnter.merge(node);
-
-                    allNodes
+                    allMeshNodes
                         .attr('transform', d => `translate(${d.x},${d.y})`)
                         .classed('selected', d => {
-                            if (d.type === 'device') {
-                                return this.selectedDevice === d.device_id ||
-                                       (this.selectedEndpoint && d.region_id === this.selectedEndpoint);
-                            } else if (d.type === 'pia') {
-                                return this.selectedEndpoint === d.region_id;
-                            }
-                            return false;
+                            return this.selectedDevice === d.device_id ||
+                                   (this.selectedEndpoint && d.region_id === this.selectedEndpoint);
                         });
 
-                    allNodes.select('circle')
-                        .attr('fill', d => {
-                            if (d.type === 'pia') return '#22c55e';
-                            return d.online ? '#3b82f6' : '#6b7280';
-                        })
+                    allMeshNodes.select('circle')
+                        .attr('fill', d => d.online ? '#3b82f6' : '#6b7280')
                         .attr('stroke', '#fff')
                         .attr('stroke-width', 2);
 
-                    allNodes.select('text')
-                        .text(d => d.label.length > 12 ? d.label.substring(0, 12) + '...' : d.label);
+                    // Update endpoint nodes
+                    const endpointNode = endpointNodesLayer.selectAll('g')
+                        .data(nodes.filter(n => n.type === 'endpoint'), d => d.id);
+
+                    endpointNode.exit().remove();
+
+                    const endpointNodeEnter = endpointNode.enter()
+                        .append('g')
+                        .attr('class', 'endpoint-node')
+                        .on('click', (event, d) => {
+                            this.toggleEndpointFilter(d.region_id);
+                        });
+
+                    endpointNodeEnter.append('circle').attr('r', 18);
+
+                    const allEndpointNodes = endpointNodeEnter.merge(endpointNode);
+
+                    allEndpointNodes
+                        .attr('transform', d => `translate(${d.x},${d.y})`)
+                        .classed('selected', d => this.selectedEndpoint === d.region_id);
+
+                    allEndpointNodes.select('circle')
+                        .attr('fill', '#10b981')
+                        .attr('stroke', '#fff')
+                        .attr('stroke-width', 2);
+
+                    // Update labels
+                    labelsLayer.selectAll('*').remove();
+
+                    // Mesh labels
+                    deviceNodes.forEach(node => {
+                        labelsLayer.append('text')
+                            .attr('class', 'mesh-label')
+                            .attr('x', node.x)
+                            .attr('y', node.y + 28)
+                            .attr('text-anchor', 'middle')
+                            .text(node.label.length > 10 ? node.label.substring(0, 10) + '...' : node.label);
+                    });
+
+                    // Endpoint labels
+                    nodes.filter(n => n.type === 'endpoint').forEach(node => {
+                        labelsLayer.append('text')
+                            .attr('class', 'endpoint-label')
+                            .attr('x', node.x)
+                            .attr('y', node.y + 32)
+                            .attr('text-anchor', 'middle')
+                            .text(node.label);
+                    });
                 }
             }
         }
