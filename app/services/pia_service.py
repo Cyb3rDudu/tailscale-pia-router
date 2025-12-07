@@ -811,13 +811,20 @@ method=disabled
                 "transfer_rx": None,
                 "transfer_tx": None,
                 "transfer_rx_bytes": 0,
-                "transfer_tx_bytes": 0
+                "transfer_tx_bytes": 0,
+                "endpoint_ip": None
             }
 
             # Parse wg show output
             for line in result.stdout.split('\n'):
                 line = line.strip()
-                if line.startswith("latest handshake:"):
+                if line.startswith("endpoint:"):
+                    # Extract endpoint IP (e.g., "endpoint: 188.215.235.100:1337")
+                    endpoint_text = line.replace("endpoint:", "").strip()
+                    if ":" in endpoint_text:
+                        endpoint_ip = endpoint_text.split(":")[0]
+                        details["endpoint_ip"] = endpoint_ip
+                elif line.startswith("latest handshake:"):
                     # Extract handshake time (e.g., "1 minute, 23 seconds ago")
                     handshake_text = line.replace("latest handshake:", "").strip()
                     details["last_handshake"] = handshake_text
@@ -846,7 +853,8 @@ method=disabled
                 "transfer_rx": None,
                 "transfer_tx": None,
                 "transfer_rx_bytes": 0,
-                "transfer_tx_bytes": 0
+                "transfer_tx_bytes": 0,
+                "endpoint_ip": None
             }
 
     def _parse_transfer_to_bytes(self, transfer_str: str) -> int:

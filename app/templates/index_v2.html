@@ -296,13 +296,25 @@
             <!-- Endpoint Pills -->
             <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
                 <div
-                    class="endpoint-pill flex items-center space-x-3 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 flex-shrink-0"
+                    class="endpoint-pill flex items-center space-x-2 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 flex-shrink-0"
                     :class="selectedEndpoint === conn.region_id ? 'active' : ''"
-                    @click="selectEndpointFilter(conn.region_id)">
-                    <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                    @click="selectEndpointFilter(conn.region_id); fetchEndpointMetadata(conn.endpoint_ip)">
+                    <!-- Status dot -->
+                    <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
+
+                    <!-- Country flag -->
+                    <span class="text-lg flex-shrink-0" x-text="getCountryFlagEmoji(endpointMetadata[conn.endpoint_ip]?.countryCode || '??')"></span>
+
+                    <!-- Region name -->
                     <span class="font-medium text-white" x-text="conn.region_name"></span>
-                    <span class="text-slate-400 text-sm">
-                        <span x-text="devices.filter(d => d.region_id === conn.region_id && d.routing_enabled).length"></span> devices
+
+                    <!-- Endpoint IP -->
+                    <span class="text-slate-400 text-xs font-mono" x-text="conn.endpoint_ip || '...'"></span>
+
+                    <!-- Device count -->
+                    <span class="text-slate-400 text-sm flex-shrink-0">
+                        (<span x-text="devices.filter(d => d.region_id === conn.region_id && d.routing_enabled).length"></span>
+                        <span x-text="devices.filter(d => d.region_id === conn.region_id && d.routing_enabled).length === 1 ? 'device' : 'devices'"></span>)
                     </span>
                 </div>
             </template>
@@ -479,6 +491,7 @@
                 pollInterval: null,
                 networkGraph: null,
                 resizeObserver: null,
+                endpointMetadata: {},  // Cache for endpoint IP/country data from ipapi.co
 
                 get filteredDevices() {
                     if (this.selectedEndpoint === null) return this.devices;
@@ -532,6 +545,15 @@
                     try {
                         const response = await fetch('/api/status/vpn');
                         this.vpnStatus = await response.json();
+
+                        // Pre-fetch endpoint metadata for all connections
+                        if (this.vpnStatus.connections) {
+                            this.vpnStatus.connections.forEach(conn => {
+                                if (conn.endpoint_ip) {
+                                    this.fetchEndpointMetadata(conn.endpoint_ip);
+                                }
+                            });
+                        }
                     } catch (error) {
                         console.error('Failed to load VPN status:', error);
                         this.vpnStatus = { active_count: 0, connections: [] };
@@ -564,6 +586,52 @@
                     } catch (error) {
                         console.error('Failed to load devices:', error);
                     }
+                },
+
+                async fetchEndpointMetadata(endpointIP) {
+                    // Check cache first
+                    if (this.endpointMetadata[endpointIP]) {
+                        return this.endpointMetadata[endpointIP];
+                    }
+
+                    try {
+                        const response = await fetch(`https://ipapi.co/${endpointIP}/json/`);
+                        const data = await response.json();
+
+                        const metadata = {
+                            ip: endpointIP,
+                            countryCode: data.country_code || '??',
+                            countryName: data.country_name || 'Unknown',
+                            city: data.city || ''
+                        };
+
+                        // Cache the result
+                        this.endpointMetadata[endpointIP] = metadata;
+                        return metadata;
+                    } catch (error) {
+                        console.error(`Failed to fetch metadata for ${endpointIP}:`, error);
+                        // Return default metadata on error
+                        const fallback = {
+                            ip: endpointIP,
+                            countryCode: '??',
+                            countryName: 'Unknown',
+                            city: ''
+                        };
+                        this.endpointMetadata[endpointIP] = fallback;
+                        return fallback;
+                    }
+                },
+
+                getCountryFlagEmoji(countryCode) {
+                    if (!countryCode || countryCode === '??') return '🌐';
+
+                    // Convert ISO country code to flag emoji
+                    // Each letter mapped to regional indicator symbol (🇦 = U+1F1E6)
+                    const codePoints = countryCode
+                        .toUpperCase()
+                        .split('')
+                        .map(char => 127397 + char.charCodeAt());
+                    return String.fromCodePoint(...codePoints);
                 },
 
                 async setDeviceRegion(deviceId, regionId) {
@@ -800,9 +868,9 @@
                     const nodes = [];
                     const links = [];
 
-                    // GLOBAL VIEW: Smaller mesh (40-50% of viewport) centered on endpoint center of mass
-                    let meshRadius = Math.min(width, height) * 0.22;  // Reduced from 0.26 to 0.22
-                    const tiltAngle = 18; // degrees (increased from 15° for more depth)
+                    // GLOBAL VIEW: Mesh radius scaled with viewport size (25% of viewport)
+                    let meshRadius = Math.min(width, height) * 0.25;
+                    const tiltAngle = 18; // degrees for 3D depth
                     const tiltRadians = (tiltAngle * Math.PI) / 180;
 
                     // Create endpoint nodes at CORRECT geographic locations
@@ -828,21 +896,10 @@
                         }
                     });
 
-                    // Calculate mesh center based on endpoint center of mass (or viewport center if no endpoints)
-                    let centerX, centerY;
-                    const endpointList = Object.values(endpointNodes);
-
-                    if (endpointList.length > 0) {
-                        // Center mesh on the geographic center of mass of all endpoints
-                        const sumX = endpointList.reduce((sum, ep) => sum + ep.x, 0);
-                        const sumY = endpointList.reduce((sum, ep) => sum + ep.y, 0);
-                        centerX = sumX / endpointList.length;
-                        centerY = sumY / endpointList.length;
-                    } else {
-                        // Fallback to viewport center if no endpoints
-                        centerX = width / 2;
-                        centerY = height / 2;
-                    }
+                    // GLOBAL VIEW: Mesh centered at viewport center (not endpoint-biased)
+                    // This ensures the mesh is visually centered in the map container
+                    const centerX = width / 2;
+                    const centerY = height / 2;
 
                     // Calculate initial mesh positions
                     const deviceCount = this.devices.length;
