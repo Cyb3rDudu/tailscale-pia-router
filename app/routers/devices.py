@@ -221,6 +221,13 @@ async def toggle_device_routing(
         if not target_enabled:
             region_id = await DeviceRoutingDB.get_region(device_id)
             if region_id:
+                # For auto-managed devices, clear the region_id to prevent auto-re-enable
+                # Check if device is auto-managed (GUI clients like iPhone)
+                is_auto_managed = device.get("os") in ["iOS", "android", "windows", "macOS"]
+                if is_auto_managed:
+                    await DeviceRoutingDB.set_region(device_id, None)
+                    logger.info(f"Cleared region for auto-managed device {device['hostname']} to prevent auto-re-enable")
+
                 # Check if any other devices are using this region
                 devices_using_region = await DeviceRoutingDB.get_devices_by_region(region_id)
                 if not devices_using_region:
