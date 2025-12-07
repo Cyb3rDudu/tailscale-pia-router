@@ -563,13 +563,14 @@
                         const response = await fetch('/api/status/vpn');
                         this.vpnStatus = await response.json();
 
-                        // Pre-fetch endpoint metadata for all connections
+                        // AWAIT all endpoint metadata fetching before rendering
                         if (this.vpnStatus.connections) {
-                            this.vpnStatus.connections.forEach(conn => {
-                                if (conn.endpoint_ip) {
-                                    this.fetchEndpointMetadata(conn.endpoint_ip);
-                                }
-                            });
+                            const metadataPromises = this.vpnStatus.connections
+                                .filter(conn => conn.endpoint_ip)
+                                .map(conn => this.fetchEndpointMetadata(conn.endpoint_ip));
+
+                            await Promise.all(metadataPromises);
+                            console.log('✓ All endpoint metadata loaded');
                         }
                     } catch (error) {
                         console.error('Failed to load VPN status:', error);
