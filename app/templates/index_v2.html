@@ -51,26 +51,24 @@
             opacity: 0.1;
         }
 
-        /* VPN route lines - curved paths */
+        /* VPN route lines - static background paths (canvas handles animation) */
         .network-link-vpn {
             stroke: #60a5fa;
-            stroke-width: 2;
+            stroke-width: 1.5;
             fill: none;
-            opacity: 0.7;
-            stroke-dasharray: 6 4;
-            /* Animation removed - static dashed lines are GPU-friendly */
+            opacity: 0.15;
+            /* Subtle static line - animation happens on canvas overlay */
         }
 
         .network-link-vpn.dimmed {
-            opacity: 0.2;
+            opacity: 0.08;
             stroke: #475569;
         }
 
         .network-link-vpn:hover,
         .network-link-vpn.highlighted {
             stroke: #fbbf24;
-            stroke-width: 3;
-            opacity: 1;
+            opacity: 0.2;
             filter: drop-shadow(0 0 4px rgba(251, 191, 36, 0.8));
         }
 
@@ -338,7 +336,10 @@
                             </svg>
                         </button>
                     </div>
-                    <div id="topology-graph" class="flex-1 min-h-0"></div>
+                    <div id="topology-graph" class="flex-1 min-h-0" style="position: relative;">
+                        <!-- Canvas overlay for animated dashes (GPU-friendly) -->
+                        <canvas id="routes-overlay" style="position: absolute; top: 0; left: 0; pointer-events: none; z-index: 10;"></canvas>
+                    </div>
                 </div>
             </div>
 
@@ -630,10 +631,12 @@
                 websocket: null,
                 metricsData: {},  // { interface: { timestamps: [], rx: [], tx: [], rawRx: [], rawTx: [] } }
 
-                // Dash animation state
-                dashAnimationFrame: 0,
-                dashOffset: 0,
-                animationFrameId: null,
+                // Canvas route animation state (GPU-friendly)
+                routesCanvas: null,
+                routesCtx: null,
+                animatedRoutes: [],  // [{ id, samples: [{x,y}...], color, isActive, zIndex }]
+                animationTime: 0,
+                routeAnimationFrameId: null,
 
                 get filteredDevices() {
                     if (this.selectedEndpoint === null) return this.devices;
@@ -658,8 +661,9 @@
                     // Start WebSocket for real-time metrics
                     this.connectMetricsWebSocket();
 
-                    // DISABLED: stroke-dashoffset animation confirmed as GPU killer (100%)
-                    // this.startDashAnimation();
+                    // Start GPU-friendly canvas animation for dashed routes
+                    this.initRoutesCanvas();
+                    this.startCanvasAnimation();
 
                     // Poll status every 5 seconds
                     this.pollInterval = setInterval(() => {
@@ -702,6 +706,186 @@
                         cancelAnimationFrame(this.animationFrameId);
                         this.animationFrameId = null;
                     }
+                },
+
+                // ========================================
+                // GPU-FRIENDLY CANVAS ROUTE ANIMATION
+                // ========================================
+
+                initRoutesCanvas() {
+                    this.routesCanvas = document.getElementById('routes-overlay');
+                    if (!this.routesCanvas) return;
+
+                    this.routesCtx = this.routesCanvas.getContext('2d', {
+                        alpha: true,
+                        desynchronized: true  // Hint for better performance
+                    });
+
+                    // Sync canvas size with container
+                    this.resizeRoutesCanvas();
+                },
+
+                resizeRoutesCanvas() {
+                    if (!this.routesCanvas || !this.networkGraph) return;
+
+                    const { width, height } = this.networkGraph;
+                    const dpr = window.devicePixelRatio || 1;
+
+                    // Set actual canvas size (accounting for device pixel ratio)
+                    this.routesCanvas.width = width * dpr;
+                    this.routesCanvas.height = height * dpr;
+
+                    // Set display size
+                    this.routesCanvas.style.width = width + 'px';
+                    this.routesCanvas.style.height = height + 'px';
+
+                    // Scale context for device pixel ratio
+                    this.routesCtx.scale(dpr, dpr);
+
+                    // Rebuild routes after resize
+                    this.buildRoutesFromSvg();
+                },
+
+                buildRoutesFromSvg() {
+                    if (!this.networkGraph) return;
+
+                    this.animatedRoutes = [];
+
+                    // Get all VPN route paths from SVG
+                    const vpnPaths = document.querySelectorAll('.network-link-vpn');
+
+                    vpnPaths.forEach((path, index) => {
+                        const totalLength = path.getTotalLength();
+                        const samples = [];
+
+                        // Sample points along path (1 point every 5px)
+                        const sampleInterval = 5;
+                        const numSamples = Math.ceil(totalLength / sampleInterval);
+
+                        for (let i = 0; i <= numSamples; i++) {
+                            const distance = (i / numSamples) * totalLength;
+                            const point = path.getPointAtLength(distance);
+                            samples.push({ x: point.x, y: point.y });
+                        }
+
+                        // Determine route state
+                        const isDimmed = path.classList.contains('dimmed');
+                        const isHighlighted = path.classList.contains('highlighted');
+
+                        // Get color from computed style or default
+                        const computedStyle = getComputedStyle(path);
+                        const strokeColor = computedStyle.stroke;
+
+                        // Convert SVG color to canvas-friendly format
+                        let color = '#60a5fa';  // Default blue
+                        if (isHighlighted) {
+                            color = '#fbbf24';  // Yellow
+                        } else if (isDimmed) {
+                            color = '#475569';  // Gray
+                        }
+
+                        this.animatedRoutes.push({
+                            id: `route-${index}`,
+                            samples,
+                            color,
+                            isActive: !isDimmed,
+                            zIndex: index,  // DOM order
+                            speed: 0.003  // Animation speed
+                        });
+                    });
+                },
+
+                startCanvasAnimation() {
+                    if (this.routeAnimationFrameId) return;  // Already running
+
+                    let lastTime = performance.now();
+
+                    const animate = (currentTime) => {
+                        const deltaTime = currentTime - lastTime;
+                        lastTime = currentTime;
+
+                        this.animationTime += deltaTime;
+
+                        this.renderAnimatedRoutes();
+
+                        this.routeAnimationFrameId = requestAnimationFrame(animate);
+                    };
+
+                    this.routeAnimationFrameId = requestAnimationFrame(animate);
+                },
+
+                stopCanvasAnimation() {
+                    if (this.routeAnimationFrameId) {
+                        cancelAnimationFrame(this.routeAnimationFrameId);
+                        this.routeAnimationFrameId = null;
+                    }
+                },
+
+                renderAnimatedRoutes() {
+                    if (!this.routesCtx || !this.routesCanvas) return;
+
+                    const ctx = this.routesCtx;
+                    const { width, height } = this.networkGraph || { width: 800, height: 600 };
+
+                    // Clear canvas
+                    ctx.clearRect(0, 0, width, height);
+
+                    // Sort routes by zIndex (background first, foreground last)
+                    const sortedRoutes = [...this.animatedRoutes].sort((a, b) => a.zIndex - b.zIndex);
+
+                    // Draw each route
+                    sortedRoutes.forEach(route => {
+                        const pts = route.samples;
+                        const len = pts.length;
+                        if (len < 2) return;
+
+                        // Set opacity based on active state
+                        ctx.globalAlpha = route.isActive ? 0.8 : 0.25;
+
+                        // Draw 2-3 moving dash segments per route
+                        const dashCount = 2;
+                        const dashLength = Math.floor(len * 0.12);  // 12% of path length
+
+                        for (let d = 0; d < dashCount; d++) {
+                            // Calculate phase offset
+                            const offset = Math.floor((this.animationTime * route.speed + d * len / dashCount) % len);
+                            const startIndex = offset;
+                            const endIndex = (offset + dashLength) % len;
+
+                            ctx.beginPath();
+                            ctx.strokeStyle = route.color;
+                            ctx.lineWidth = 2;
+                            ctx.lineCap = 'round';
+                            ctx.lineJoin = 'round';
+
+                            // Draw dash segment
+                            if (endIndex > startIndex) {
+                                // Normal case - no wrap
+                                ctx.moveTo(pts[startIndex].x, pts[startIndex].y);
+                                for (let i = startIndex + 1; i <= endIndex; i++) {
+                                    ctx.lineTo(pts[i].x, pts[i].y);
+                                }
+                            } else {
+                                // Wrapped around end of array
+                                ctx.moveTo(pts[startIndex].x, pts[startIndex].y);
+                                for (let i = startIndex + 1; i < len; i++) {
+                                    ctx.lineTo(pts[i].x, pts[i].y);
+                                }
+                                // Continue from beginning
+                                if (endIndex > 0) {
+                                    ctx.moveTo(pts[0].x, pts[0].y);
+                                    for (let i = 1; i <= endIndex; i++) {
+                                        ctx.lineTo(pts[i].x, pts[i].y);
+                                    }
+                                }
+                            }
+
+                            ctx.stroke();
+                        }
+                    });
+
+                    // Reset alpha
+                    ctx.globalAlpha = 1.0;
                 },
 
                 async loadRegions() {
@@ -1348,7 +1532,10 @@
                         .selectAll('path')
                         .attr('d', d3.geoPath().projection(this.networkGraph.projection));
 
-                    // Redraw topology
+                    // Resize canvas overlay
+                    this.resizeRoutesCanvas();
+
+                    // Redraw topology (buildRoutesFromSvg is called within updateTopologyGraph)
                     this.updateTopologyGraph();
                 },
 
@@ -1901,6 +2088,11 @@
                         }
 
                         placedLabels.push(position.bbox);
+                    });
+
+                    // Rebuild canvas routes after SVG topology update
+                    this.$nextTick(() => {
+                        this.buildRoutesFromSvg();
                     });
                 },
 
