@@ -176,6 +176,9 @@ async def reconciliation_loop():
             # Track which connections should be active
             expected_connections = set()
 
+            # Collect devices that need drift checking (for parallel execution)
+            devices_to_check_drift = []
+
             # Check each enabled device
             for config in routing_configs:
                 if not config.get("enabled") or not config.get("region_id"):
@@ -255,10 +258,23 @@ async def reconciliation_loop():
                         else:
                             logger.error(f"Reconciliation: Failed to restore routing for {device['hostname']}")
 
-                # Check if device exit node matches expected (drift detection)
-                # Only check Linux devices (SSH-capable)
+                # Collect device for parallel drift checking (only Linux devices)
                 device_os = device.get("os", "").lower()
                 if device_os == "linux" and expected_exit_node_ip:
+                    devices_to_check_drift.append({
+                        "device": device,
+                        "device_ip": device_ip,
+                        "expected_exit_node_ip": expected_exit_node_ip
+                    })
+
+            # Perform drift checks in parallel to avoid timing issues with many devices
+            if devices_to_check_drift:
+                async def check_and_fix_drift(drift_info):
+                    """Check drift for a single device and fix if needed."""
+                    device = drift_info["device"]
+                    device_ip = drift_info["device_ip"]
+                    expected = drift_info["expected_exit_node_ip"]
+
                     try:
                         # Get current exit node on device via SSH
                         current_exit_node = await ssh_service.get_exit_node_via_ssh(
@@ -268,16 +284,16 @@ async def reconciliation_loop():
                         )
 
                         # Check for drift (None means SSH failed, skip in that case)
-                        if current_exit_node is not None and current_exit_node != expected_exit_node_ip:
+                        if current_exit_node is not None and current_exit_node != expected:
                             logger.warning(
                                 f"Reconciliation: Exit node drift detected on {device['hostname']} "
-                                f"(current: {current_exit_node or 'none'}, expected: {expected_exit_node_ip}), restoring..."
+                                f"(current: {current_exit_node or 'none'}, expected: {expected}), restoring..."
                             )
 
                             # Restore correct exit node
                             ssh_result = await ssh_service.set_exit_node_via_ssh(
                                 device_target=device_ip,
-                                exit_node_ip=expected_exit_node_ip,
+                                exit_node_ip=expected,
                                 username="root",
                                 device_hostname=device['hostname']
                             )
@@ -289,6 +305,12 @@ async def reconciliation_loop():
 
                     except Exception as e:
                         logger.debug(f"Reconciliation: Could not check exit node on {device['hostname']}: {e}")
+
+                # Execute all drift checks in parallel
+                await asyncio.gather(
+                    *[check_and_fix_drift(info) for info in devices_to_check_drift],
+                    return_exceptions=True
+                )
 
         except Exception as e:
             logger.error(f"Error in reconciliation loop: {e}", exc_info=True)
