@@ -358,24 +358,6 @@
                         <span class="text-xs text-slate-400" x-text="getSelectedEndpointName()"></span>
                     </div>
 
-                    <!-- Time Range Selector -->
-                    <div class="flex gap-2 mb-4">
-                        <button @click="selectedTimeRange = '5min'"
-                                :class="selectedTimeRange === '5min' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300'"
-                                class="px-3 py-1 rounded text-xs font-medium transition-colors">
-                            5 min
-                        </button>
-                        <button @click="selectedTimeRange = '1h'"
-                                :class="selectedTimeRange === '1h' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300'"
-                                class="px-3 py-1 rounded text-xs font-medium transition-colors">
-                            1 hour
-                        </button>
-                        <button @click="selectedTimeRange = '24h'"
-                                :class="selectedTimeRange === '24h' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-300'"
-                                class="px-3 py-1 rounded text-xs font-medium transition-colors">
-                            24 hours
-                        </button>
-                    </div>
 
                     <!-- Enhanced Metrics Summary with Current + Average -->
                     <div class="grid grid-cols-2 gap-3 mb-4">
@@ -649,11 +631,7 @@
                 // WebSocket for real-time metrics
                 websocket: null,
                 metricsData: {},  // { interface: { timestamps: [], rx: [], tx: [] } }
-                selectedTimeRange: '5min',  // '5min' | '1h' | '24h'
                 metricsCharts: {},  // { throughput: uPlotInstance }
-                showRawData: false,  // Toggle for smoothed vs raw throughput data
-                metricsLoading: false,  // Loading state for metrics
-                chartTransitioning: false,  // Fade animation during range switch
 
                 get filteredDevices() {
                     if (this.selectedEndpoint === null) return this.devices;
@@ -677,21 +655,6 @@
 
                     // Start WebSocket for real-time metrics
                     this.connectMetricsWebSocket();
-
-                    // Watch for time range changes - destroy and recreate chart
-                    this.$watch('selectedTimeRange', () => {
-                        // Destroy chart to force recreation with new data range
-                        if (this.metricsCharts.throughput) {
-                            this.metricsCharts.throughput.destroy();
-                            this.metricsCharts.throughput = null;
-                        }
-
-                        this.chartTransitioning = true;
-                        setTimeout(() => {
-                            this.updateMetricsCharts();
-                            this.chartTransitioning = false;
-                        }, 300);
-                    });
 
                     // Poll status every 5 seconds
                     this.pollInterval = setInterval(() => {
@@ -1865,10 +1828,6 @@
                         this.metricsCharts.throughput.destroy();
                         this.metricsCharts.throughput = null;
                     }
-                    if (this.metricsCharts.latency) {
-                        this.metricsCharts.latency.destroy();
-                        this.metricsCharts.latency = null;
-                    }
                     return;
                 }
 
@@ -1879,112 +1838,8 @@
                 const history = this.metricsData[connection.interface];
                 if (!history || history.timestamps.length < 2) return;
 
-                // Filter data based on selected time range
-                const filteredData = this.filterDataByTimeRange(history);
-
-                // Create/update throughput chart
-                this.renderThroughputChart(filteredData);
-            },
-
-            // Data smoothing using Exponential Moving Average
-            applySmoothingEMA(data, alpha = 0.3) {
-                if (data.length === 0) return data;
-
-                const smoothed = [data[0]];
-                for (let i = 1; i < data.length; i++) {
-                    if (data[i] !== null && data[i] !== undefined) {
-                        smoothed[i] = alpha * data[i] + (1 - alpha) * smoothed[i - 1];
-                    } else {
-                        smoothed[i] = smoothed[i - 1];
-                    }
-                }
-                return smoothed;
-            },
-
-            // Data aggregation for longer time ranges
-            aggregateData(data, bucketSize) {
-                if (data.timestamps.length === 0) return data;
-
-                const buckets = [];
-                let currentBucket = {
-                    timestamps: [],
-                    rx: [],
-                    tx: []
-                };
-
-                for (let i = 0; i < data.timestamps.length; i++) {
-                    currentBucket.timestamps.push(data.timestamps[i]);
-                    currentBucket.rx.push(data.rx[i]);
-                    currentBucket.tx.push(data.tx[i]);
-
-                    if (currentBucket.timestamps.length >= bucketSize || i === data.timestamps.length - 1) {
-                        buckets.push(currentBucket);
-                        currentBucket = {
-                            timestamps: [],
-                            rx: [],
-                            tx: []
-                        };
-                    }
-                }
-
-                // Aggregate each bucket
-                const aggregated = {
-                    timestamps: [],
-                    rx: [],
-                    tx: []
-                };
-
-                buckets.forEach(bucket => {
-                    // Use middle timestamp of bucket
-                    aggregated.timestamps.push(bucket.timestamps[Math.floor(bucket.timestamps.length / 2)]);
-
-                    // Average throughput values
-                    const avgRx = bucket.rx.reduce((sum, val) => sum + val, 0) / bucket.rx.length;
-                    const avgTx = bucket.tx.reduce((sum, val) => sum + val, 0) / bucket.tx.length;
-                    aggregated.rx.push(avgRx);
-                    aggregated.tx.push(avgTx);
-                });
-
-                return aggregated;
-            },
-
-            filterDataByTimeRange(history) {
-                const now = Date.now() / 1000;
-                let cutoff, bucketSize;
-
-                switch (this.selectedTimeRange) {
-                    case '5min':
-                        cutoff = now - 300;  // 5 minutes
-                        bucketSize = 1;  // No aggregation, use raw 1-second data
-                        break;
-                    case '1h':
-                        cutoff = now - 3600;  // 1 hour
-                        bucketSize = 10;  // Aggregate into 10-second buckets
-                        break;
-                    case '24h':
-                        cutoff = now - 86400;  // 24 hours
-                        bucketSize = 60;  // Aggregate into 60-second (1-minute) buckets
-                        break;
-                    default:
-                        cutoff = 0;
-                        bucketSize = 1;
-                }
-
-                const startIdx = history.timestamps.findIndex(t => t >= cutoff);
-                if (startIdx === -1) return history;
-
-                let filtered = {
-                    timestamps: history.timestamps.slice(startIdx),
-                    rx: history.rx.slice(startIdx),
-                    tx: history.tx.slice(startIdx)
-                };
-
-                // Apply aggregation for longer time ranges
-                if (bucketSize > 1) {
-                    filtered = this.aggregateData(filtered, bucketSize);
-                }
-
-                return filtered;
+                // Create/update throughput chart with raw data (no filtering, no aggregation)
+                this.renderThroughputChart(history);
             },
 
             renderThroughputChart(data) {
@@ -2073,19 +1928,15 @@
                 return this.formatBytes(history.tx[history.tx.length - 1]) + '/s';
             },
 
-            // Average calculation methods for summary stats
+            // Average calculation methods for summary stats (over the full 2-minute buffer)
             getAverageDownloadRate() {
                 const connection = this.vpnStatus.connections?.find(c => c.region_id === this.selectedEndpoint);
                 if (!connection) return '-';
                 const history = this.metricsData[connection.interface];
                 if (!history || history.rx.length === 0) return '-';
 
-                // Filter data by selected time range
-                const filteredData = this.filterDataByTimeRange(history);
-                if (filteredData.rx.length === 0) return '-';
-
-                const sum = filteredData.rx.reduce((acc, val) => acc + val, 0);
-                const avg = sum / filteredData.rx.length;
+                const sum = history.rx.reduce((acc, val) => acc + val, 0);
+                const avg = sum / history.rx.length;
                 return this.formatBytes(avg) + '/s';
             },
 
@@ -2095,11 +1946,8 @@
                 const history = this.metricsData[connection.interface];
                 if (!history || history.tx.length === 0) return '-';
 
-                const filteredData = this.filterDataByTimeRange(history);
-                if (filteredData.tx.length === 0) return '-';
-
-                const sum = filteredData.tx.reduce((acc, val) => acc + val, 0);
-                const avg = sum / filteredData.tx.length;
+                const sum = history.tx.reduce((acc, val) => acc + val, 0);
+                const avg = sum / history.tx.length;
                 return this.formatBytes(avg) + '/s';
             },
 
