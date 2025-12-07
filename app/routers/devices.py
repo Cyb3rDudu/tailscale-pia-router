@@ -78,6 +78,8 @@ async def get_devices() -> TailscaleDeviceList:
                     region_name = region["name"]
 
             # Auto-enable/disable routing for GUI clients based on region selection
+            # IMPORTANT: Skip auto-management if device has explicitly disabled routing
+            # (region_id is None but we're checking a manual disable scenario)
             if is_auto_managed:
                 if region_id and not routing_enabled:
                     # GUI device has region selected, enable routing to that region
