@@ -32,16 +32,21 @@
             opacity: 0.25;
         }
 
-        /* Mesh connection lines */
+        /* Mesh connection lines - 3D effect with shadow */
         .network-link-mesh {
             stroke: #475569;
             stroke-width: 1;
             stroke-dasharray: 4 4;
             fill: none;
             opacity: 0.3;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.4));
         }
 
-        /* VPN route lines */
+        .network-link-mesh.dimmed {
+            opacity: 0.1;
+        }
+
+        /* VPN route lines - curved paths */
         .network-link-vpn {
             stroke: #60a5fa;
             stroke-width: 2;
@@ -49,6 +54,11 @@
             opacity: 0.7;
             stroke-dasharray: 6 4;
             animation: dash-route 20s linear infinite;
+        }
+
+        .network-link-vpn.dimmed {
+            opacity: 0.2;
+            stroke: #475569;
         }
 
         .network-link-vpn:hover,
@@ -65,51 +75,81 @@
             }
         }
 
-        /* Endpoint nodes (geographic PIA servers) */
+        /* Endpoint nodes (geographic PIA servers) - smaller with glow */
         .endpoint-node {
             cursor: pointer;
             transition: all 0.3s ease;
-            filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.6));
         }
 
-        .endpoint-node:hover {
-            transform: scale(1.15);
-            filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.9));
+        .endpoint-node circle {
+            filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.5));
         }
 
-        .endpoint-node.selected {
-            filter: brightness(1.5) drop-shadow(0 0 12px rgba(251, 191, 36, 0.9));
+        .endpoint-node.dimmed circle {
+            opacity: 0.3;
+            filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.2));
         }
 
-        /* Mesh nodes (Tailscale devices) */
+        .endpoint-node:hover circle {
+            transform: scale(1.2);
+            filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.8));
+        }
+
+        .endpoint-node.selected circle {
+            filter: brightness(1.3) drop-shadow(0 0 12px rgba(251, 191, 36, 0.9));
+        }
+
+        /* Mesh nodes (Tailscale devices) - 3D depth with shadows */
         .mesh-node {
             cursor: pointer;
             transition: all 0.3s ease;
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+        }
+
+        .mesh-node.dimmed {
+            opacity: 0.3;
         }
 
         .mesh-node:hover {
-            filter: brightness(1.2);
+            filter: brightness(1.2) drop-shadow(0 6px 12px rgba(0, 0, 0, 0.6));
         }
 
         .mesh-node.selected {
-            filter: brightness(1.5) drop-shadow(0 0 8px rgba(59, 130, 246, 0.8));
+            filter: brightness(1.5) drop-shadow(0 0 12px rgba(59, 130, 246, 0.8));
         }
 
-        /* Labels */
+        /* Labels with dark halo for readability */
         .endpoint-label {
             font-size: 11px;
             font-weight: 600;
             fill: #ffffff;
-            text-shadow: 0 0 4px rgba(0, 0, 0, 0.8), 0 0 8px rgba(0, 0, 0, 0.6);
+            paint-order: stroke;
+            stroke: #000000;
+            stroke-width: 3px;
+            stroke-linecap: round;
+            stroke-linejoin: round;
             pointer-events: none;
+        }
+
+        .endpoint-label.dimmed {
+            opacity: 0.3;
         }
 
         .mesh-label {
             font-size: 10px;
             font-weight: 500;
             fill: #e2e8f0;
-            text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+            opacity: 0.95;
+            paint-order: stroke;
+            stroke: #000000;
+            stroke-width: 2px;
+            stroke-linecap: round;
+            stroke-linejoin: round;
             pointer-events: none;
+        }
+
+        .mesh-label.dimmed {
+            opacity: 0.3;
         }
 
         /* All Endpoints pill */
@@ -145,6 +185,25 @@
             background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
             border-color: #3b82f6;
             box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+        }
+
+        /* Map expand toggle button */
+        .expand-toggle {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 10;
+            background: rgba(30, 41, 59, 0.9);
+            border: 1px solid #475569;
+            border-radius: 6px;
+            padding: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .expand-toggle:hover {
+            background: rgba(51, 65, 85, 0.9);
+            border-color: #64748b;
         }
 
         /* Device table styles */
@@ -184,6 +243,12 @@
         .device-table-container::-webkit-scrollbar-thumb {
             background: #475569;
             border-radius: 3px;
+        }
+
+        /* Transition for layout changes */
+        .topology-container,
+        .table-container {
+            transition: width 0.3s ease;
         }
     </style>
 </head>
@@ -233,7 +298,7 @@
                 <div
                     class="endpoint-pill flex items-center space-x-3 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 flex-shrink-0"
                     :class="selectedEndpoint === conn.region_id ? 'active' : ''"
-                    @click="toggleEndpointFilter(conn.region_id)">
+                    @click="selectEndpointFilter(conn.region_id)">
                     <div class="w-2 h-2 rounded-full bg-green-500"></div>
                     <span class="font-medium text-white" x-text="conn.region_name"></span>
                     <span class="text-slate-400 text-sm">
@@ -245,28 +310,44 @@
         </div>
     </div>
 
-    <!-- Main Content: Split View (Graph 60% + Table 40%) -->
+    <!-- Main Content: Split View (Graph + Table) -->
     <main class="px-6 py-4" style="height: calc(100vh - 140px);">
         <div class="flex space-x-4 h-full">
-            <!-- LEFT: Geographic Topology (60% width) -->
-            <div class="w-3/5 flex-shrink-0">
+            <!-- LEFT: Geographic Topology (expandable) -->
+            <div class="topology-container flex-shrink-0 relative" :class="mapExpanded ? 'w-[85%]' : 'w-3/5'">
                 <div class="bg-slate-900 rounded-lg border border-slate-800 p-4 h-full flex flex-col">
-                    <h2 class="text-lg font-semibold text-white mb-3">Network Topology</h2>
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-lg font-semibold text-white">Network Topology</h2>
+
+                        <!-- Expand/Collapse Toggle -->
+                        <button
+                            @click="mapExpanded = !mapExpanded"
+                            class="expand-toggle"
+                            :title="mapExpanded ? 'Collapse map' : 'Expand map'">
+                            <svg x-show="!mapExpanded" class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+                            </svg>
+                            <svg x-show="mapExpanded" class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
                     <div id="topology-graph" class="flex-1 min-h-0"></div>
                 </div>
             </div>
 
-            <!-- RIGHT: Device Routing Table (40% width) -->
-            <div class="w-2/5 flex-shrink-0">
+            <!-- RIGHT: Device Routing Table (collapsible) -->
+            <div class="table-container flex-shrink-0" :class="mapExpanded ? 'w-[15%]' : 'w-2/5'">
                 <div class="bg-slate-900 rounded-lg border border-slate-800 p-4 h-full flex flex-col">
                     <div class="flex items-center justify-between mb-3">
-                        <h2 class="text-lg font-semibold text-white">Device Routing</h2>
-                        <span class="text-sm text-slate-400"><span x-text="filteredDevices.length"></span> / <span x-text="devices.length"></span> devices</span>
+                        <h2 class="text-lg font-semibold text-white" x-show="!mapExpanded">Device Routing</h2>
+                        <h2 class="text-sm font-semibold text-white" x-show="mapExpanded">Devices</h2>
+                        <span class="text-sm text-slate-400"><span x-text="filteredDevices.length"></span><span x-show="!mapExpanded"> / <span x-text="devices.length"></span></span></span>
                     </div>
 
                     <!-- Scrollable table container -->
                     <div class="device-table-container flex-1 min-h-0 overflow-y-auto">
-                        <table class="device-table w-full">
+                        <table class="device-table w-full" x-show="!mapExpanded">
                             <thead class="sticky top-0 bg-slate-800 text-slate-300 text-xs uppercase">
                                 <tr>
                                     <th class="px-3 py-2 text-left">Device</th>
@@ -321,7 +402,23 @@
                                 </template>
                             </tbody>
                         </table>
-                        <div x-show="filteredDevices.length === 0" class="text-center py-8 text-slate-500">
+
+                        <!-- Compact view when expanded -->
+                        <div x-show="mapExpanded" class="space-y-2">
+                            <template x-for="device in filteredDevices" :key="device.id">
+                                <div
+                                    class="p-2 bg-slate-800 rounded border border-slate-700 cursor-pointer hover:bg-slate-750"
+                                    :class="selectedDevice === device.id ? 'bg-slate-700' : ''"
+                                    @click="selectDevice(device.id)">
+                                    <div class="flex items-center space-x-2">
+                                        <div :class="device.online ? 'bg-green-500' : 'bg-slate-500'" class="w-2 h-2 rounded-full flex-shrink-0"></div>
+                                        <span class="text-xs font-medium text-white truncate" x-text="device.hostname"></span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div x-show="filteredDevices.length === 0" class="text-center py-8 text-slate-500 text-sm">
                             No devices found
                         </div>
                     </div>
@@ -331,42 +428,42 @@
     </main>
 
     <script>
-        // Geographic coordinates for PIA regions
+        // Geographic coordinates for PIA regions (CORRECTED)
         const REGION_COORDINATES = {
             'sg': { lat: 1.3521, lng: 103.8198, name: 'Singapore' },
+            'singapore': { lat: 1.3521, lng: 103.8198, name: 'Singapore' },
             'kh': { lat: 11.5564, lng: 104.9282, name: 'Cambodia' },
-            'us-alaska': { lat: 61.2181, lng: -149.9003, name: 'US Alaska' },
-            'au-melbourne': { lat: -37.8136, lng: 144.9631, name: 'AU Melbourne' },
-            'au-sydney': { lat: -33.8688, lng: 151.2093, name: 'AU Sydney' },
-            'au-perth': { lat: -31.9505, lng: 115.8605, name: 'AU Perth' },
-            'jp': { lat: 35.6762, lng: 139.6503, name: 'Japan' },
-            'hk': { lat: 22.3193, lng: 114.1694, name: 'Hong Kong' },
-            'in': { lat: 19.0760, lng: 72.8777, name: 'India' },
-            'nz': { lat: -36.8485, lng: 174.7633, name: 'New Zealand' },
-            'uk': { lat: 51.5074, lng: -0.1278, name: 'UK London' },
-            'de': { lat: 52.5200, lng: 13.4050, name: 'Germany' },
-            'fr': { lat: 48.8566, lng: 2.3522, name: 'France' },
-            'nl': { lat: 52.3676, lng: 4.9041, name: 'Netherlands' },
-            'us-california': { lat: 37.7749, lng: -122.4194, name: 'US California' },
-            'us-newyork': { lat: 40.7128, lng: -74.0060, name: 'US New York' },
-            'us-texas': { lat: 29.7604, lng: -95.3698, name: 'US Texas' },
-            'ca': { lat: 43.6532, lng: -79.3832, name: 'Canada' },
-            'br': { lat: -23.5505, lng: -46.6333, name: 'Brazil' },
-            'za': { lat: -33.9249, lng: 18.4241, name: 'South Africa' }
+            'cambodia': { lat: 11.5564, lng: 104.9282, name: 'Cambodia' },
+            'alaska': { lat: 61.2181, lng: -149.9003, name: 'US Alaska' },
+            'melbourne': { lat: -37.8136, lng: 144.9631, name: 'AU Melbourne' },
+            'sydney': { lat: -33.8688, lng: 151.2093, name: 'AU Sydney' },
+            'perth': { lat: -31.9505, lng: 115.8605, name: 'AU Perth' },
+            'japan': { lat: 35.6762, lng: 139.6503, name: 'Japan' },
+            'tokyo': { lat: 35.6762, lng: 139.6503, name: 'Japan' },
+            'hong': { lat: 22.3193, lng: 114.1694, name: 'Hong Kong' },
+            'india': { lat: 19.0760, lng: 72.8777, name: 'India' },
+            'mumbai': { lat: 19.0760, lng: 72.8777, name: 'India' },
+            'zealand': { lat: -36.8485, lng: 174.7633, name: 'New Zealand' },
+            'auckland': { lat: -36.8485, lng: 174.7633, name: 'New Zealand' },
+            'london': { lat: 51.5074, lng: -0.1278, name: 'UK London' },
+            'uk': { lat: 51.5074, lng: -0.1278, name: 'UK' },
+            'germany': { lat: 52.5200, lng: 13.4050, name: 'Germany' },
+            'berlin': { lat: 52.5200, lng: 13.4050, name: 'Germany' },
+            'france': { lat: 48.8566, lng: 2.3522, name: 'France' },
+            'paris': { lat: 48.8566, lng: 2.3522, name: 'France' },
+            'netherlands': { lat: 52.3676, lng: 4.9041, name: 'Netherlands' },
+            'amsterdam': { lat: 52.3676, lng: 4.9041, name: 'Netherlands' },
+            'california': { lat: 37.7749, lng: -122.4194, name: 'US California' },
+            'newyork': { lat: 40.7128, lng: -74.0060, name: 'US New York' },
+            'texas': { lat: 29.7604, lng: -95.3698, name: 'US Texas' },
+            'houston': { lat: 29.7604, lng: -95.3698, name: 'US Texas' },
+            'canada': { lat: 43.6532, lng: -79.3832, name: 'Canada' },
+            'toronto': { lat: 43.6532, lng: -79.3832, name: 'Canada' },
+            'brazil': { lat: -23.5505, lng: -46.6333, name: 'Brazil' },
+            'paulo': { lat: -23.5505, lng: -46.6333, name: 'Brazil' },
+            'africa': { lat: -33.9249, lng: 18.4241, name: 'South Africa' },
+            'capetown': { lat: -33.9249, lng: 18.4241, name: 'South Africa' }
         };
-
-        // Utility: debounce function
-        function debounce(func, wait) {
-            let timeout;
-            return function executedFunction(...args) {
-                const later = () => {
-                    clearTimeout(timeout);
-                    func(...args);
-                };
-                clearTimeout(timeout);
-                timeout = setTimeout(later, wait);
-            };
-        }
 
         function app() {
             return {
@@ -378,9 +475,10 @@
                 devices: [],
                 selectedEndpoint: null,  // null = "All Endpoints"
                 selectedDevice: null,
+                mapExpanded: false,
                 pollInterval: null,
                 networkGraph: null,
-                resizeHandler: null,
+                resizeObserver: null,
 
                 get filteredDevices() {
                     if (this.selectedEndpoint === null) return this.devices;
@@ -397,11 +495,14 @@
                         this.refreshStatus();
                     }, 5000);
 
-                    // Add resize handler with debouncing
-                    this.resizeHandler = debounce(() => {
-                        this.resizeTopologyGraph();
-                    }, 250);
-                    window.addEventListener('resize', this.resizeHandler);
+                    // Use ResizeObserver for auto-resize
+                    const container = document.getElementById('topology-graph');
+                    if (container) {
+                        this.resizeObserver = new ResizeObserver(() => {
+                            this.resizeTopologyGraph();
+                        });
+                        this.resizeObserver.observe(container);
+                    }
                 },
 
                 async loadRegions() {
@@ -512,12 +613,9 @@
                     });
                 },
 
-                toggleEndpointFilter(regionId) {
-                    if (this.selectedEndpoint === regionId) {
-                        this.selectedEndpoint = null;
-                    } else {
-                        this.selectedEndpoint = regionId;
-                    }
+                selectEndpointFilter(regionId) {
+                    // Clicking same endpoint does NOT clear - must click "All Endpoints"
+                    this.selectedEndpoint = regionId;
                     this.$nextTick(() => {
                         this.updateTopologyGraph();
                     });
@@ -551,7 +649,7 @@
                         .attr('height', height)
                         .attr('viewBox', [0, 0, width, height]);
 
-                    // Create projection for world map
+                    // Create CORRECT projection for world map
                     const projection = d3.geoMercator()
                         .center([60, 10])  // Center between Asia and Australia
                         .scale(width / 6.5)
@@ -590,7 +688,7 @@
                         const world = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
                         const countries = topojson.feature(world, world.objects.countries);
 
-                        // Draw countries
+                        // Draw countries with CORRECT projection
                         this.networkGraph.mapLayer
                             .selectAll('path')
                             .data(countries.features)
@@ -635,14 +733,30 @@
                 },
 
                 getRegionCoordinates(regionId) {
-                    // Try to match region ID to known coordinates
+                    // Try to match region ID to known coordinates (improved matching)
+                    const searchId = regionId.toLowerCase();
+
                     for (const [key, coords] of Object.entries(REGION_COORDINATES)) {
-                        if (regionId.toLowerCase().includes(key) || key.includes(regionId.toLowerCase())) {
+                        if (searchId.includes(key) || key.includes(searchId)) {
                             return coords;
                         }
                     }
+
                     // Default to center if unknown
-                    return { lat: 0, lng: 60, name: 'Unknown' };
+                    console.warn(`No coordinates found for region: ${regionId}`);
+                    return { lat: 0, lng: 60, name: regionId };
+                },
+
+                // Generate curved path for VPN routes
+                generateCurvedPath(source, target) {
+                    const dx = target.x - source.x;
+                    const dy = target.y - source.y;
+                    const dr = Math.sqrt(dx * dx + dy * dy);
+
+                    // Add curvature (10% of distance)
+                    const curve = dr * 0.1;
+
+                    return `M${source.x},${source.y} Q${(source.x + target.x) / 2},${(source.y + target.y) / 2 - curve} ${target.x},${target.y}`;
                 },
 
                 updateTopologyGraph() {
@@ -655,31 +769,46 @@
                     const links = [];
                     const centerX = width / 2;
                     const centerY = height / 2;
-                    const meshRadius = Math.min(width, height) * 0.28;
 
-                    // Create endpoint nodes at geographic locations
+                    // 3D tilt effect: mesh radius + perspective offset
+                    const meshRadius = Math.min(width, height) * 0.28;
+                    const tiltAngle = 15; // degrees
+                    const tiltRadians = (tiltAngle * Math.PI) / 180;
+
+                    // Create endpoint nodes at CORRECT geographic locations
                     const endpointNodes = {};
                     this.vpnStatus.connections.forEach((conn) => {
                         const coords = this.getRegionCoordinates(conn.region_id);
-                        const [x, y] = projection([coords.lng, coords.lat]);
+                        const projectedCoords = projection([coords.lng, coords.lat]);
 
-                        const endpointNode = {
-                            id: `endpoint-${conn.region_id}`,
-                            label: conn.region_name,
-                            type: 'endpoint',
-                            region_id: conn.region_id,
-                            x: x,
-                            y: y
-                        };
+                        if (projectedCoords) {
+                            const [x, y] = projectedCoords;
 
-                        nodes.push(endpointNode);
-                        endpointNodes[conn.region_id] = endpointNode;
+                            const endpointNode = {
+                                id: `endpoint-${conn.region_id}`,
+                                label: conn.region_name,
+                                type: 'endpoint',
+                                region_id: conn.region_id,
+                                x: x,
+                                y: y
+                            };
+
+                            nodes.push(endpointNode);
+                            endpointNodes[conn.region_id] = endpointNode;
+                        }
                     });
 
-                    // Position devices in circular mesh
+                    // Position devices in circular mesh with 3D tilt
                     const deviceCount = this.devices.length;
                     this.devices.forEach((device, idx) => {
                         const angle = (idx / deviceCount) * 2 * Math.PI - Math.PI / 2;
+
+                        // Base position on circle
+                        const baseX = centerX + meshRadius * Math.cos(angle);
+                        const baseY = centerY + meshRadius * Math.sin(angle);
+
+                        // Apply 3D tilt (y-axis rotation creates perspective)
+                        const tiltOffset = Math.sin(angle) * meshRadius * Math.sin(tiltRadians) * 0.3;
 
                         nodes.push({
                             id: `device-${device.id}`,
@@ -689,13 +818,16 @@
                             region_id: device.region_id,
                             device_id: device.id,
                             routing_enabled: device.routing_enabled,
-                            x: centerX + meshRadius * Math.cos(angle),
-                            y: centerY + meshRadius * Math.sin(angle)
+                            x: baseX,
+                            y: baseY - tiltOffset,  // Tilt creates vertical offset
+                            depth: Math.cos(angle)  // For depth sorting
                         });
                     });
 
-                    // Add VPN route lines (device → endpoint)
-                    const deviceNodes = nodes.filter(n => n.type === 'device');
+                    // Sort devices by depth for proper layering
+                    const deviceNodes = nodes.filter(n => n.type === 'device').sort((a, b) => a.depth - b.depth);
+
+                    // Add VPN route lines (device → endpoint) as CURVED paths
                     deviceNodes.forEach(deviceNode => {
                         if (deviceNode.region_id && deviceNode.routing_enabled) {
                             const endpointNode = endpointNodes[deviceNode.region_id];
@@ -703,7 +835,9 @@
                                 links.push({
                                     source: deviceNode,
                                     target: endpointNode,
-                                    type: 'vpn'
+                                    type: 'vpn',
+                                    device_id: deviceNode.device_id,
+                                    region_id: deviceNode.region_id
                                 });
                             }
                         }
@@ -720,20 +854,21 @@
                         }
                     }
 
-                    // Update route lines
-                    const routeLink = routesLayer.selectAll('line')
+                    // Determine dimming based on filter
+                    const isFiltered = this.selectedEndpoint !== null;
+
+                    // Update route lines with CURVED paths
+                    const routeLink = routesLayer.selectAll('path')
                         .data(links.filter(l => l.type === 'vpn'), d => `${d.source.id}-${d.target.id}`);
 
                     routeLink.exit().remove();
 
                     routeLink.enter()
-                        .append('line')
+                        .append('path')
                         .attr('class', 'network-link-vpn')
                         .merge(routeLink)
-                        .attr('x1', d => d.source.x)
-                        .attr('y1', d => d.source.y)
-                        .attr('x2', d => d.target.x)
-                        .attr('y2', d => d.target.y);
+                        .attr('d', d => this.generateCurvedPath(d.source, d.target))
+                        .classed('dimmed', d => isFiltered && d.region_id !== this.selectedEndpoint);
 
                     // Update mesh lines
                     const meshLink = meshLayer.selectAll('line')
@@ -748,7 +883,12 @@
                         .attr('x1', d => d.source.x)
                         .attr('y1', d => d.source.y)
                         .attr('x2', d => d.target.x)
-                        .attr('y2', d => d.target.y);
+                        .attr('y2', d => d.target.y)
+                        .classed('dimmed', d =>
+                            isFiltered &&
+                            d.source.region_id !== this.selectedEndpoint &&
+                            d.target.region_id !== this.selectedEndpoint
+                        );
 
                     // Update mesh nodes
                     const meshNode = meshNodesLayer.selectAll('g')
@@ -763,23 +903,21 @@
                             this.selectDevice(d.device_id);
                         });
 
-                    meshNodeEnter.append('circle').attr('r', 16);
+                    meshNodeEnter.append('circle').attr('r', 14);  // Smaller radius
 
                     const allMeshNodes = meshNodeEnter.merge(meshNode);
 
                     allMeshNodes
                         .attr('transform', d => `translate(${d.x},${d.y})`)
-                        .classed('selected', d => {
-                            return this.selectedDevice === d.device_id ||
-                                   (this.selectedEndpoint && d.region_id === this.selectedEndpoint);
-                        });
+                        .classed('selected', d => this.selectedDevice === d.device_id)
+                        .classed('dimmed', d => isFiltered && d.region_id !== this.selectedEndpoint);
 
                     allMeshNodes.select('circle')
                         .attr('fill', d => d.online ? '#3b82f6' : '#6b7280')
                         .attr('stroke', '#fff')
                         .attr('stroke-width', 2);
 
-                    // Update endpoint nodes
+                    // Update endpoint nodes (SMALLER size)
                     const endpointNode = endpointNodesLayer.selectAll('g')
                         .data(nodes.filter(n => n.type === 'endpoint'), d => d.id);
 
@@ -789,42 +927,47 @@
                         .append('g')
                         .attr('class', 'endpoint-node')
                         .on('click', (event, d) => {
-                            this.toggleEndpointFilter(d.region_id);
+                            this.selectEndpointFilter(d.region_id);
                         });
 
-                    endpointNodeEnter.append('circle').attr('r', 18);
+                    endpointNodeEnter.append('circle').attr('r', 10);  // Reduced from 18 to 10 (45% smaller)
 
                     const allEndpointNodes = endpointNodeEnter.merge(endpointNode);
 
                     allEndpointNodes
                         .attr('transform', d => `translate(${d.x},${d.y})`)
-                        .classed('selected', d => this.selectedEndpoint === d.region_id);
+                        .classed('selected', d => this.selectedEndpoint === d.region_id)
+                        .classed('dimmed', d => isFiltered && this.selectedEndpoint !== d.region_id);
 
                     allEndpointNodes.select('circle')
                         .attr('fill', '#10b981')
                         .attr('stroke', '#fff')
-                        .attr('stroke-width', 2);
+                        .attr('stroke-width', 1.5);
 
                     // Update labels
                     labelsLayer.selectAll('*').remove();
 
-                    // Mesh labels
+                    // Mesh labels (with halo for readability)
                     deviceNodes.forEach(node => {
+                        const labelText = node.label.length > 10 ? node.label.substring(0, 10) + '...' : node.label;
+
                         labelsLayer.append('text')
                             .attr('class', 'mesh-label')
                             .attr('x', node.x)
-                            .attr('y', node.y + 28)
+                            .attr('y', node.y + 26)
                             .attr('text-anchor', 'middle')
-                            .text(node.label.length > 10 ? node.label.substring(0, 10) + '...' : node.label);
+                            .classed('dimmed', isFiltered && node.region_id !== this.selectedEndpoint)
+                            .text(labelText);
                     });
 
-                    // Endpoint labels
+                    // Endpoint labels (with halo for readability)
                     nodes.filter(n => n.type === 'endpoint').forEach(node => {
                         labelsLayer.append('text')
                             .attr('class', 'endpoint-label')
                             .attr('x', node.x)
-                            .attr('y', node.y + 32)
+                            .attr('y', node.y + 24)
                             .attr('text-anchor', 'middle')
+                            .classed('dimmed', isFiltered && this.selectedEndpoint !== node.region_id)
                             .text(node.label);
                     });
                 }
