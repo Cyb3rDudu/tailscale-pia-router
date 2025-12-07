@@ -377,29 +377,71 @@
                         </button>
                     </div>
 
-                    <!-- Current Metrics Summary -->
+                    <!-- Enhanced Metrics Summary with Current + Average -->
                     <div class="grid grid-cols-3 gap-3 mb-4">
-                        <div class="bg-slate-800 rounded p-3">
-                            <div class="text-xs text-slate-400 mb-1">Download</div>
-                            <div class="text-sm font-semibold text-green-400" x-text="getCurrentDownloadRate()"></div>
+                        <div class="bg-slate-800 rounded p-3 border border-slate-700">
+                            <div class="text-xs text-slate-400 mb-1 font-medium">Download</div>
+                            <div class="text-base font-bold text-green-400" x-text="getCurrentDownloadRate()"></div>
+                            <div class="text-xs text-slate-500 mt-1">
+                                <span class="text-slate-400">avg</span> <span x-text="getAverageDownloadRate()"></span>
+                            </div>
                         </div>
-                        <div class="bg-slate-800 rounded p-3">
-                            <div class="text-xs text-slate-400 mb-1">Upload</div>
-                            <div class="text-sm font-semibold text-blue-400" x-text="getCurrentUploadRate()"></div>
+                        <div class="bg-slate-800 rounded p-3 border border-slate-700">
+                            <div class="text-xs text-slate-400 mb-1 font-medium">Upload</div>
+                            <div class="text-base font-bold text-blue-400" x-text="getCurrentUploadRate()"></div>
+                            <div class="text-xs text-slate-500 mt-1">
+                                <span class="text-slate-400">avg</span> <span x-text="getAverageUploadRate()"></span>
+                            </div>
                         </div>
-                        <div class="bg-slate-800 rounded p-3">
-                            <div class="text-xs text-slate-400 mb-1">Latency</div>
-                            <div class="text-sm font-semibold text-yellow-400" x-text="getCurrentLatency()"></div>
+                        <div class="bg-slate-800 rounded p-3 border border-slate-700">
+                            <div class="text-xs text-slate-400 mb-1 font-medium">Latency</div>
+                            <div class="text-base font-bold" :class="getLatencyColor()" x-text="getCurrentLatency()"></div>
+                            <div class="text-xs text-slate-500 mt-1">
+                                <span class="text-slate-400">avg</span> <span x-text="getAverageLatency()"></span>
+                            </div>
                         </div>
                     </div>
 
                     <!-- Throughput Graph -->
                     <div class="mb-4">
-                        <h3 class="text-sm font-medium text-slate-300 mb-2">Throughput</h3>
-                        <div id="throughput-chart" class="bg-slate-800 rounded p-2" style="height: 150px;">
-                            <!-- uPlot will render here -->
-                            <div x-show="!hasMetricsData()" class="flex items-center justify-center h-full">
-                                <span class="text-xs text-slate-500">Collecting data...</span>
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-medium text-slate-300">Throughput</h3>
+                            <!-- Smooth/Raw Toggle -->
+                            <div class="flex gap-1 text-xs">
+                                <button @click="showRawData = false"
+                                        :class="!showRawData ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'"
+                                        class="px-2 py-1 rounded transition-colors">
+                                    Smoothed
+                                </button>
+                                <button @click="showRawData = true"
+                                        :class="showRawData ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'"
+                                        class="px-2 py-1 rounded transition-colors">
+                                    Raw
+                                </button>
+                            </div>
+                        </div>
+                        <div id="throughput-chart" class="bg-slate-800 rounded p-2 border border-slate-700 relative transition-opacity duration-300"
+                             :class="chartTransitioning ? 'opacity-50' : 'opacity-100'"
+                             style="height: 180px;">
+                            <!-- Loading Skeleton -->
+                            <div x-show="metricsLoading" class="absolute inset-0 flex items-center justify-center bg-slate-800 rounded">
+                                <div class="flex flex-col items-center gap-2">
+                                    <svg class="animate-spin h-5 w-5 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <span class="text-xs text-slate-400">Loading metrics...</span>
+                                </div>
+                            </div>
+                            <!-- Empty State -->
+                            <div x-show="!hasMetricsData() && !metricsLoading" class="flex items-center justify-center h-full">
+                                <div class="text-center">
+                                    <svg class="w-12 h-12 mx-auto mb-2 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
+                                    </svg>
+                                    <p class="text-xs text-slate-500">No recent metrics</p>
+                                    <p class="text-xs text-slate-600 mt-1">for <span x-text="getSelectedEndpointName()"></span></p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -407,10 +449,28 @@
                     <!-- Latency Graph -->
                     <div>
                         <h3 class="text-sm font-medium text-slate-300 mb-2">Latency</h3>
-                        <div id="latency-chart" class="bg-slate-800 rounded p-2" style="height: 120px;">
-                            <!-- uPlot will render here -->
-                            <div x-show="!hasMetricsData()" class="flex items-center justify-center h-full">
-                                <span class="text-xs text-slate-500">Collecting data...</span>
+                        <div id="latency-chart" class="bg-slate-800 rounded p-2 border border-slate-700 relative transition-opacity duration-300"
+                             :class="chartTransitioning ? 'opacity-50' : 'opacity-100'"
+                             style="height: 150px;">
+                            <!-- Loading Skeleton -->
+                            <div x-show="metricsLoading" class="absolute inset-0 flex items-center justify-center bg-slate-800 rounded">
+                                <div class="flex flex-col items-center gap-2">
+                                    <svg class="animate-spin h-5 w-5 text-amber-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <span class="text-xs text-slate-400">Loading metrics...</span>
+                                </div>
+                            </div>
+                            <!-- Empty State -->
+                            <div x-show="!hasMetricsData() && !metricsLoading" class="flex items-center justify-center h-full">
+                                <div class="text-center">
+                                    <svg class="w-12 h-12 mx-auto mb-2 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                    </svg>
+                                    <p class="text-xs text-slate-500">No latency data</p>
+                                    <p class="text-xs text-slate-600 mt-1">for <span x-text="getSelectedEndpointName()"></span></p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -641,6 +701,9 @@
                 metricsData: {},  // { interface: { timestamps: [], rx: [], tx: [], latency: [] } }
                 selectedTimeRange: '5min',  // '5min' | '1h' | '24h'
                 metricsCharts: {},  // { throughput: uPlotInstance, latency: uPlotInstance }
+                showRawData: false,  // Toggle for smoothed vs raw throughput data
+                metricsLoading: false,  // Loading state for metrics
+                chartTransitioning: false,  // Fade animation during range switch
 
                 get filteredDevices() {
                     if (this.selectedEndpoint === null) return this.devices;
@@ -667,6 +730,15 @@
 
                     // Watch for time range changes and update charts
                     this.$watch('selectedTimeRange', () => {
+                        this.chartTransitioning = true;
+                        setTimeout(() => {
+                            this.updateMetricsCharts();
+                            this.chartTransitioning = false;
+                        }, 300);
+                    });
+
+                    // Watch for smooth/raw toggle changes and update throughput chart
+                    this.$watch('showRawData', () => {
                         this.updateMetricsCharts();
                     });
 
@@ -1879,125 +1951,305 @@
                 this.renderLatencyChart(filteredData);
             },
 
+            // Data smoothing using Exponential Moving Average
+            applySmoothingEMA(data, alpha = 0.3) {
+                if (data.length === 0) return data;
+
+                const smoothed = [data[0]];
+                for (let i = 1; i < data.length; i++) {
+                    if (data[i] !== null && data[i] !== undefined) {
+                        smoothed[i] = alpha * data[i] + (1 - alpha) * smoothed[i - 1];
+                    } else {
+                        smoothed[i] = smoothed[i - 1];
+                    }
+                }
+                return smoothed;
+            },
+
+            // Data aggregation for longer time ranges
+            aggregateData(data, bucketSize) {
+                if (data.timestamps.length === 0) return data;
+
+                const buckets = [];
+                let currentBucket = {
+                    timestamps: [],
+                    rx: [],
+                    tx: [],
+                    latency: []
+                };
+
+                for (let i = 0; i < data.timestamps.length; i++) {
+                    currentBucket.timestamps.push(data.timestamps[i]);
+                    currentBucket.rx.push(data.rx[i]);
+                    currentBucket.tx.push(data.tx[i]);
+                    currentBucket.latency.push(data.latency[i]);
+
+                    if (currentBucket.timestamps.length >= bucketSize || i === data.timestamps.length - 1) {
+                        buckets.push(currentBucket);
+                        currentBucket = {
+                            timestamps: [],
+                            rx: [],
+                            tx: [],
+                            latency: []
+                        };
+                    }
+                }
+
+                // Aggregate each bucket
+                const aggregated = {
+                    timestamps: [],
+                    rx: [],
+                    tx: [],
+                    latency: []
+                };
+
+                buckets.forEach(bucket => {
+                    // Use middle timestamp of bucket
+                    aggregated.timestamps.push(bucket.timestamps[Math.floor(bucket.timestamps.length / 2)]);
+
+                    // Average throughput values
+                    const avgRx = bucket.rx.reduce((sum, val) => sum + val, 0) / bucket.rx.length;
+                    const avgTx = bucket.tx.reduce((sum, val) => sum + val, 0) / bucket.tx.length;
+                    aggregated.rx.push(avgRx);
+                    aggregated.tx.push(avgTx);
+
+                    // Average latency (excluding nulls)
+                    const validLatencies = bucket.latency.filter(l => l !== null && l !== undefined);
+                    const avgLatency = validLatencies.length > 0
+                        ? validLatencies.reduce((sum, val) => sum + val, 0) / validLatencies.length
+                        : null;
+                    aggregated.latency.push(avgLatency);
+                });
+
+                return aggregated;
+            },
+
             filterDataByTimeRange(history) {
                 const now = Date.now() / 1000;
-                let cutoff;
+                let cutoff, bucketSize;
 
                 switch (this.selectedTimeRange) {
                     case '5min':
                         cutoff = now - 300;  // 5 minutes
+                        bucketSize = 1;  // No aggregation, use raw 1-second data
                         break;
                     case '1h':
                         cutoff = now - 3600;  // 1 hour
+                        bucketSize = 10;  // Aggregate into 10-second buckets
                         break;
                     case '24h':
                         cutoff = now - 86400;  // 24 hours
+                        bucketSize = 60;  // Aggregate into 60-second (1-minute) buckets
                         break;
                     default:
                         cutoff = 0;
+                        bucketSize = 1;
                 }
 
                 const startIdx = history.timestamps.findIndex(t => t >= cutoff);
                 if (startIdx === -1) return history;
 
-                return {
+                let filtered = {
                     timestamps: history.timestamps.slice(startIdx),
                     rx: history.rx.slice(startIdx),
                     tx: history.tx.slice(startIdx),
                     latency: history.latency.slice(startIdx)
                 };
+
+                // Apply aggregation for longer time ranges
+                if (bucketSize > 1) {
+                    filtered = this.aggregateData(filtered, bucketSize);
+                }
+
+                return filtered;
             },
 
             renderThroughputChart(data) {
                 const chartDiv = document.getElementById('throughput-chart');
                 if (!chartDiv) return;
 
+                // Apply smoothing if not in raw data mode
+                let rxData = [...data.rx];
+                let txData = [...data.tx];
+
+                if (!this.showRawData) {
+                    rxData = this.applySmoothingEMA(rxData, 0.3);
+                    txData = this.applySmoothingEMA(txData, 0.3);
+                }
+
+                // Calculate auto-scaling Y-axis range
+                const allValues = [...rxData, ...txData].filter(v => v !== null && v !== undefined);
+                const maxValue = allValues.length > 0 ? Math.max(...allValues) : 1000;
+                const minValue = 0;
+
+                // Add gentle clamping - max value with 10% headroom
+                const yMax = maxValue * 1.1;
+
                 const chartData = [
                     [...data.timestamps],
-                    [...data.rx],
-                    [...data.tx]
+                    rxData,
+                    txData
                 ];
 
-                if (!this.metricsCharts.throughput) {
-                    const opts = {
-                        width: chartDiv.clientWidth - 20,
-                        height: 150,
-                        padding: [10, 10, 10, 0],
-                        series: [
-                            { label: 'Time' },
-                            {
-                                label: 'Download',
-                                stroke: 'rgb(34, 197, 94)',  // Green
-                                fill: 'rgba(34, 197, 94, 0.1)',
-                                width: 2,
-                                value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
-                            },
-                            {
-                                label: 'Upload',
-                                stroke: 'rgb(59, 130, 246)',  // Blue
-                                fill: 'rgba(59, 130, 246, 0.1)',
-                                width: 2,
-                                value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
-                            }
-                        ],
-                        axes: [
-                            { show: false },  // X-axis (time)
-                            {  // Y-axis (bytes/s)
-                                stroke: '#9ca3af',
-                                grid: { stroke: '#374151', width: 1 },
-                                values: (self, ticks) => ticks.map(v => this.formatBytes(v) + '/s'),
-                                size: 70
-                            }
-                        ],
-                        legend: { show: false }
-                    };
-
-                    this.metricsCharts.throughput = new uPlot(opts, chartData, chartDiv);
-                } else {
-                    this.metricsCharts.throughput.setData(chartData);
+                // Destroy old chart if switching modes or time range
+                if (this.metricsCharts.throughput) {
+                    this.metricsCharts.throughput.destroy();
+                    this.metricsCharts.throughput = null;
                 }
+
+                const opts = {
+                    width: chartDiv.clientWidth - 20,
+                    height: 180,
+                    padding: [10, 10, 10, 0],
+                    series: [
+                        { label: 'Time' },
+                        {
+                            label: 'Download',
+                            stroke: 'rgb(34, 197, 94)',  // Green
+                            fill: 'rgba(34, 197, 94, 0.1)',
+                            width: 2,
+                            value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
+                        },
+                        {
+                            label: 'Upload',
+                            stroke: 'rgb(59, 130, 246)',  // Blue
+                            fill: 'rgba(59, 130, 246, 0.1)',
+                            width: 2,
+                            value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
+                        }
+                    ],
+                    scales: {
+                        y: {
+                            range: [minValue, yMax]
+                        }
+                    },
+                    axes: [
+                        { show: false },  // X-axis (time)
+                        {  // Y-axis (bytes/s)
+                            stroke: '#9ca3af',
+                            grid: {
+                                stroke: 'rgba(71, 85, 105, 0.3)',  // Subtle gridlines
+                                width: 1
+                            },
+                            values: (self, ticks) => ticks.map(v => this.formatBytes(v) + '/s'),
+                            size: 70
+                        }
+                    ],
+                    legend: { show: false },
+                    cursor: {
+                        drag: { x: false, y: false },
+                        focus: { prox: 30 },
+                        points: {
+                            size: 6,
+                            width: 1.5
+                        },
+                        sync: {
+                            key: 'metrics',
+                            setSeries: true
+                        }
+                    }
+                };
+
+                this.metricsCharts.throughput = new uPlot(opts, chartData, chartDiv);
             },
 
             renderLatencyChart(data) {
                 const chartDiv = document.getElementById('latency-chart');
                 if (!chartDiv) return;
 
+                // Detect spikes and create spike markers
+                const spikes = [];
+                data.latency.forEach((latency, idx) => {
+                    if (latency !== null && latency !== undefined) {
+                        if (latency > 1500) {
+                            spikes.push({ idx, severity: 'critical', value: latency });
+                        } else if (latency > 800) {
+                            spikes.push({ idx, severity: 'warning', value: latency });
+                        }
+                    }
+                });
+
+                // Calculate auto-scaling Y-axis for latency
+                const validLatencies = data.latency.filter(l => l !== null && l !== undefined);
+                const maxLatency = validLatencies.length > 0 ? Math.max(...validLatencies) : 200;
+                const yMax = Math.min(Math.max(maxLatency * 1.2, 200), 2000);  // Clamp between 200ms and 2000ms
+
                 const chartData = [
                     [...data.timestamps],
                     [...data.latency]
                 ];
 
-                if (!this.metricsCharts.latency) {
-                    const opts = {
-                        width: chartDiv.clientWidth - 20,
-                        height: 120,
-                        padding: [10, 10, 10, 0],
-                        series: [
-                            { label: 'Time' },
-                            {
-                                label: 'Latency',
-                                stroke: 'rgb(234, 179, 8)',  // Yellow
-                                fill: 'rgba(234, 179, 8, 0.1)',
-                                width: 2,
-                                value: (self, rawValue) => rawValue == null ? '-' : rawValue + 'ms'
-                            }
-                        ],
-                        axes: [
-                            { show: false },  // X-axis
-                            {  // Y-axis (milliseconds)
-                                stroke: '#9ca3af',
-                                grid: { stroke: '#374151', width: 1 },
-                                values: (self, ticks) => ticks.map(v => v + 'ms'),
-                                size: 60
-                            }
-                        ],
-                        legend: { show: false }
-                    };
-
-                    this.metricsCharts.latency = new uPlot(opts, chartData, chartDiv);
-                } else {
-                    this.metricsCharts.latency.setData(chartData);
+                // Destroy old chart if switching modes or time range
+                if (this.metricsCharts.latency) {
+                    this.metricsCharts.latency.destroy();
+                    this.metricsCharts.latency = null;
                 }
+
+                const opts = {
+                    width: chartDiv.clientWidth - 20,
+                    height: 150,
+                    padding: [10, 10, 10, 0],
+                    series: [
+                        { label: 'Time' },
+                        {
+                            label: 'Latency',
+                            stroke: 'rgb(251, 146, 60)',  // Amber/orange
+                            fill: 'rgba(251, 146, 60, 0.1)',
+                            width: 2,
+                            value: (self, rawValue) => {
+                                if (rawValue == null) return '-';
+                                let status = 'Normal';
+                                if (rawValue > 1500) status = 'Critical';
+                                else if (rawValue > 800) status = 'Warning';
+                                return `${Math.round(rawValue)}ms (${status})`;
+                            },
+                            points: {
+                                show: (self, seriesIdx, dataIdx) => {
+                                    // Show points only for spikes
+                                    return spikes.some(s => s.idx === dataIdx);
+                                },
+                                fill: (self, seriesIdx, dataIdx) => {
+                                    const spike = spikes.find(s => s.idx === dataIdx);
+                                    if (!spike) return 'rgb(251, 146, 60)';
+                                    return spike.severity === 'critical' ? 'rgb(239, 68, 68)' : 'rgb(234, 179, 8)';
+                                },
+                                size: 8
+                            }
+                        }
+                    ],
+                    scales: {
+                        y: {
+                            range: [0, yMax]
+                        }
+                    },
+                    axes: [
+                        { show: false },  // X-axis
+                        {  // Y-axis (milliseconds)
+                            stroke: '#9ca3af',
+                            grid: {
+                                stroke: 'rgba(71, 85, 105, 0.3)',  // Subtle gridlines
+                                width: 1
+                            },
+                            values: (self, ticks) => ticks.map(v => Math.round(v) + 'ms'),
+                            size: 60
+                        }
+                    ],
+                    legend: { show: false },
+                    cursor: {
+                        drag: { x: false, y: false },
+                        focus: { prox: 30 },
+                        points: {
+                            size: 6,
+                            width: 1.5
+                        },
+                        sync: {
+                            key: 'metrics',
+                            setSeries: true
+                        }
+                    }
+                };
+
+                this.metricsCharts.latency = new uPlot(opts, chartData, chartDiv);
             },
 
             // Helper methods for summary cards
@@ -2024,6 +2276,66 @@
                 if (!history || history.latency.length === 0) return '-';
                 const latency = history.latency[history.latency.length - 1];
                 return latency ? latency + 'ms' : '-';
+            },
+
+            // Average calculation methods for summary stats
+            getAverageDownloadRate() {
+                const connection = this.vpnStatus.connections?.find(c => c.region_id === this.selectedEndpoint);
+                if (!connection) return '-';
+                const history = this.metricsData[connection.interface];
+                if (!history || history.rx.length === 0) return '-';
+
+                // Filter data by selected time range
+                const filteredData = this.filterDataByTimeRange(history);
+                if (filteredData.rx.length === 0) return '-';
+
+                const sum = filteredData.rx.reduce((acc, val) => acc + val, 0);
+                const avg = sum / filteredData.rx.length;
+                return this.formatBytes(avg) + '/s';
+            },
+
+            getAverageUploadRate() {
+                const connection = this.vpnStatus.connections?.find(c => c.region_id === this.selectedEndpoint);
+                if (!connection) return '-';
+                const history = this.metricsData[connection.interface];
+                if (!history || history.tx.length === 0) return '-';
+
+                const filteredData = this.filterDataByTimeRange(history);
+                if (filteredData.tx.length === 0) return '-';
+
+                const sum = filteredData.tx.reduce((acc, val) => acc + val, 0);
+                const avg = sum / filteredData.tx.length;
+                return this.formatBytes(avg) + '/s';
+            },
+
+            getAverageLatency() {
+                const connection = this.vpnStatus.connections?.find(c => c.region_id === this.selectedEndpoint);
+                if (!connection) return '-';
+                const history = this.metricsData[connection.interface];
+                if (!history || history.latency.length === 0) return '-';
+
+                const filteredData = this.filterDataByTimeRange(history);
+                const validLatencies = filteredData.latency.filter(l => l !== null && l !== undefined);
+                if (validLatencies.length === 0) return '-';
+
+                const sum = validLatencies.reduce((acc, val) => acc + val, 0);
+                const avg = Math.round(sum / validLatencies.length);
+                return avg + 'ms';
+            },
+
+            getLatencyColor() {
+                const connection = this.vpnStatus.connections?.find(c => c.region_id === this.selectedEndpoint);
+                if (!connection) return 'text-slate-400';
+                const history = this.metricsData[connection.interface];
+                if (!history || history.latency.length === 0) return 'text-slate-400';
+
+                const latency = history.latency[history.latency.length - 1];
+                if (!latency) return 'text-slate-400';
+
+                // Color thresholds: green (<200ms), yellow (200-800ms), red (>=800ms)
+                if (latency < 200) return 'text-green-400';
+                if (latency < 800) return 'text-yellow-400';
+                return 'text-red-400';
             },
 
             hasMetricsData() {
