@@ -632,53 +632,17 @@
                     });
                 },
 
-                // Calculate smart map center based on active endpoints
+                // Global View: Show entire world map (Pacific to Pacific, -180° to +180°)
                 calculateMapCenter() {
-                    if (!this.vpnStatus.connections || this.vpnStatus.connections.length === 0) {
-                        // Default to global view if no endpoints
-                        return { centerLon: 60, centerLat: 10, scale: 1 };
-                    }
+                    // GLOBAL VIEW MODE: Always show the full world
+                    // Center on prime meridian with slight eastward shift for balanced Pacific view
+                    // Scale is fixed to ensure entire world (-180° to +180° longitude) is visible
 
-                    // Get all endpoint coordinates
-                    const endpointCoords = this.vpnStatus.connections.map(conn => {
-                        return this.getRegionCoordinates(conn.region_id);
-                    }).filter(coord => coord.lat !== 0 || coord.lng !== 60); // Filter out defaults
-
-                    if (endpointCoords.length === 0) {
-                        return { centerLon: 60, centerLat: 10, scale: 1 };
-                    }
-
-                    // Calculate bounding box
-                    const lons = endpointCoords.map(c => c.lng);
-                    const lats = endpointCoords.map(c => c.lat);
-
-                    const minLon = Math.min(...lons);
-                    const maxLon = Math.max(...lons);
-                    const minLat = Math.min(...lats);
-                    const maxLat = Math.max(...lats);
-
-                    // Calculate center (weighted average)
-                    const centerLon = (minLon + maxLon) / 2;
-                    const centerLat = ((minLat + maxLat) / 2) - 5; // Slight downward adjustment for framing
-
-                    // Calculate zoom scale based on bounding box span
-                    const lonSpan = maxLon - minLon;
-                    const latSpan = maxLat - minLat;
-
-                    // Add padding to show more global context (endpoints occupy 60-70% of viewport)
-                    // Use more padding when map is expanded to maintain global view feeling
-                    const viewportPadding = this.mapExpanded ? 2.2 : 2.0;
-                    const paddedLonSpan = lonSpan * viewportPadding;
-                    const paddedLatSpan = latSpan * viewportPadding;
-
-                    // Calculate scale to fit all endpoints with comfortable padding
-                    const baseScale = this.networkGraph ? this.networkGraph.width / 6.5 : 100;
-                    const scaleByLon = baseScale / (paddedLonSpan / 60); // 60 is reference span
-                    const scaleByLat = baseScale / (paddedLatSpan / 40); // 40 is reference span
-
-                    const scale = Math.max(0.6, Math.min(1.5, Math.min(scaleByLon, scaleByLat)));
-
-                    return { centerLon, centerLat, scale };
+                    return {
+                        centerLon: 0,      // Prime meridian (Americas left, Europe/Africa center, Asia right)
+                        centerLat: 10,     // Slight northern hemisphere bias for better land visibility
+                        scale: 1.0         // Fixed scale - entire world always visible
+                    };
                 },
 
                 async initTopologyGraph() {
@@ -831,11 +795,9 @@
                     // Build graph data
                     const nodes = [];
                     const links = [];
-                    const centerX = width / 2;
-                    const centerY = height / 2;
 
-                    // 3D tilt effect: mesh radius + perspective offset (increased to 18°)
-                    let meshRadius = Math.min(width, height) * 0.26;
+                    // GLOBAL VIEW: Smaller mesh (40-50% of viewport) centered on endpoint center of mass
+                    let meshRadius = Math.min(width, height) * 0.22;  // Reduced from 0.26 to 0.22
                     const tiltAngle = 18; // degrees (increased from 15° for more depth)
                     const tiltRadians = (tiltAngle * Math.PI) / 180;
 
@@ -861,6 +823,22 @@
                             endpointNodes[conn.region_id] = endpointNode;
                         }
                     });
+
+                    // Calculate mesh center based on endpoint center of mass (or viewport center if no endpoints)
+                    let centerX, centerY;
+                    const endpointList = Object.values(endpointNodes);
+
+                    if (endpointList.length > 0) {
+                        // Center mesh on the geographic center of mass of all endpoints
+                        const sumX = endpointList.reduce((sum, ep) => sum + ep.x, 0);
+                        const sumY = endpointList.reduce((sum, ep) => sum + ep.y, 0);
+                        centerX = sumX / endpointList.length;
+                        centerY = sumY / endpointList.length;
+                    } else {
+                        // Fallback to viewport center if no endpoints
+                        centerX = width / 2;
+                        centerY = height / 2;
+                    }
 
                     // Calculate initial mesh positions
                     const deviceCount = this.devices.length;
@@ -1030,7 +1008,7 @@
                             this.selectEndpointFilter(d.region_id);
                         });
 
-                    endpointNodeEnter.append('circle').attr('r', 8);  // Reduced from 18 to 8 (55% smaller)
+                    endpointNodeEnter.append('circle').attr('r', 6);  // Global View: smaller for spacious feeling
 
                     const allEndpointNodes = endpointNodeEnter.merge(endpointNode);
 
