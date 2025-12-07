@@ -178,25 +178,25 @@
                                             this.open = false;
                                             this.search = '';
                                         }
-                                    }" class="relative">
+                                    }" class="relative" @click.away="open = false">
                                         <!-- Selected Region Display -->
                                         <button
                                             @click="open = !open"
-                                            @click.away="open = false"
                                             type="button"
-                                            class="w-full flex items-center justify-between text-sm py-2 px-3 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 touch-manipulation">
-                                            <span x-text="device.region_id ? (regions.find(r => r.id === device.region_id)?.name + ' (' + regions.find(r => r.id === device.region_id)?.country + ')') : '-- No VPN --'"></span>
-                                            <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            class="w-full flex items-center justify-between text-sm py-2 px-3 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 touch-manipulation text-left">
+                                            <span class="truncate" x-text="device.region_id ? (regions.find(r => r.id === device.region_id)?.name + ' (' + regions.find(r => r.id === device.region_id)?.country + ')') : '-- No VPN --'"></span>
+                                            <svg class="w-4 h-4 ml-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                                             </svg>
                                         </button>
 
                                         <!-- Dropdown -->
-                                        <div x-show="open" class="absolute z-10 mt-1 w-full bg-white dark:bg-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                        <div x-show="open" class="absolute z-10 mt-1 w-full bg-white dark:bg-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto" @click.stop>
                                             <!-- Search Box -->
                                             <div class="sticky top-0 p-2 bg-white dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                                                 <input
                                                     x-model="search"
+                                                    @click.stop
                                                     type="text"
                                                     placeholder="Search country or city..."
                                                     class="w-full text-sm py-1 px-2 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-white focus:border-blue-500 focus:ring-blue-500">
@@ -230,26 +230,25 @@
 
                                 <!-- Status and Toggle Button -->
                                 <div class="flex items-center justify-between">
-                                    <div x-show="device.region_id" class="text-xs" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'">
+                                    <div x-show="device.region_id" class="text-xs flex-1" :class="device.routing_enabled ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'">
                                         <span x-text="device.routing_enabled ? '✓ Routing enabled' : '⏳ Connecting...'"></span>
                                         <span x-show="device.auto_managed" class="ml-1 text-gray-500 dark:text-gray-400">(Set exit node in app)</span>
                                     </div>
 
-                                    <!-- Play/Pause Toggle Button -->
+                                    <!-- Play/Stop Toggle Button -->
                                     <button
-                                        x-show="device.region_id"
                                         @click="toggleDeviceRouting(device.id)"
                                         :disabled="!device.region_id"
-                                        class="flex items-center justify-center w-8 h-8 rounded-full transition-colors"
-                                        :class="device.routing_enabled ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 dark:hover:bg-green-800' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'"
-                                        :title="device.routing_enabled ? 'Pause routing' : 'Start routing'">
-                                        <!-- Play Icon (when paused) -->
+                                        class="flex items-center justify-center w-8 h-8 rounded-full transition-colors flex-shrink-0"
+                                        :class="device.routing_enabled ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800' : (device.region_id ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 dark:hover:bg-green-800' : 'bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed')"
+                                        :title="device.routing_enabled ? 'Stop routing' : (device.region_id ? 'Start routing' : 'Select a region first')">
+                                        <!-- Play Icon (when stopped) -->
                                         <svg x-show="!device.routing_enabled" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                                             <path d="M8 5v14l11-7z"/>
                                         </svg>
-                                        <!-- Pause Icon (when playing) -->
+                                        <!-- Stop Icon (when playing) -->
                                         <svg x-show="device.routing_enabled" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                                            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                                            <path d="M6 6h12v12H6z"/>
                                         </svg>
                                     </button>
                                 </div>
@@ -307,25 +306,25 @@
                                                     this.open = false;
                                                     this.search = '';
                                                 }
-                                            }" class="relative flex-1">
+                                            }" class="relative flex-1 min-w-0" @click.away="open = false">
                                                 <!-- Selected Region Display -->
                                                 <button
                                                     @click="open = !open"
-                                                    @click.away="open = false"
                                                     type="button"
-                                                    class="w-full flex items-center justify-between text-sm py-2 px-3 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 min-w-[200px]">
-                                                    <span x-text="device.region_id ? (regions.find(r => r.id === device.region_id)?.name + ' (' + regions.find(r => r.id === device.region_id)?.country + ')') : '-- No VPN --'"></span>
+                                                    class="w-full flex items-center justify-between text-sm py-2 px-3 rounded-md border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 text-left">
+                                                    <span class="truncate" x-text="device.region_id ? (regions.find(r => r.id === device.region_id)?.name + ' (' + regions.find(r => r.id === device.region_id)?.country + ')') : '-- No VPN --'"></span>
                                                     <svg class="w-4 h-4 ml-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
                                                     </svg>
                                                 </button>
 
                                                 <!-- Dropdown -->
-                                                <div x-show="open" class="absolute z-10 mt-1 w-full bg-white dark:bg-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                <div x-show="open" class="absolute z-10 mt-1 w-full bg-white dark:bg-gray-700 rounded-md shadow-lg max-h-60 overflow-y-auto" @click.stop>
                                                     <!-- Search Box -->
                                                     <div class="sticky top-0 p-2 bg-white dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
                                                         <input
                                                             x-model="search"
+                                                            @click.stop
                                                             type="text"
                                                             placeholder="Search country or city..."
                                                             class="w-full text-sm py-1 px-2 rounded border border-gray-300 dark:border-gray-600 dark:bg-gray-600 dark:text-white focus:border-blue-500 focus:ring-blue-500">
@@ -356,21 +355,20 @@
                                                 </div>
                                             </div>
 
-                                            <!-- Play/Pause Toggle Button -->
+                                            <!-- Play/Stop Toggle Button -->
                                             <button
-                                                x-show="device.region_id"
                                                 @click="toggleDeviceRouting(device.id)"
                                                 :disabled="!device.region_id"
                                                 class="flex items-center justify-center w-10 h-10 rounded-full transition-colors flex-shrink-0"
-                                                :class="device.routing_enabled ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 dark:hover:bg-green-800' : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'"
-                                                :title="device.routing_enabled ? 'Pause routing' : 'Start routing'">
-                                                <!-- Play Icon (when paused) -->
+                                                :class="device.routing_enabled ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800' : (device.region_id ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300 dark:hover:bg-green-800' : 'bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500 cursor-not-allowed')"
+                                                :title="device.routing_enabled ? 'Stop routing' : (device.region_id ? 'Start routing' : 'Select a region first')">
+                                                <!-- Play Icon (when stopped) -->
                                                 <svg x-show="!device.routing_enabled" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                                                     <path d="M8 5v14l11-7z"/>
                                                 </svg>
-                                                <!-- Pause Icon (when playing) -->
+                                                <!-- Stop Icon (when playing) -->
                                                 <svg x-show="device.routing_enabled" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                                    <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                                                    <path d="M6 6h12v12H6z"/>
                                                 </svg>
                                             </button>
                                         </div>
@@ -595,7 +593,8 @@
 
                         if (!response.ok) {
                             const error = await response.json();
-                            alert('Failed to toggle device routing: ' + error.detail);
+                            const errorMessage = error.detail || JSON.stringify(error);
+                            alert('Failed to toggle device routing: ' + errorMessage);
                             await this.loadDevices();
                         } else {
                             const data = await response.json();
@@ -606,7 +605,8 @@
                             }
                         }
                     } catch (error) {
-                        alert('Failed to toggle device routing: ' + error.message);
+                        const errorMessage = error.message || String(error);
+                        alert('Failed to toggle device routing: ' + errorMessage);
                         await this.loadDevices();
                     }
                 },
