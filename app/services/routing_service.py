@@ -133,6 +133,46 @@ class RoutingService:
             logger.error(f"Failed to setup base rules: {e}")
             return False
 
+    async def cleanup_duplicate_rules(self, device_ip: str, keep_table_id: int) -> None:
+        """Remove duplicate routing rules for a device, keeping only the specified table.
+
+        Args:
+            device_ip: Device IP address
+            keep_table_id: Table ID to keep (all others will be removed)
+        """
+        try:
+            # Get all existing rules for this device
+            result = subprocess.run(
+                ["ip", "rule", "list"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            # Parse rules and delete duplicates
+            for line in result.stdout.splitlines():
+                if f"from {device_ip} lookup" in line:
+                    # Extract table ID from rule
+                    parts = line.split()
+                    if "lookup" in parts:
+                        table_idx = parts.index("lookup") + 1
+                        if table_idx < len(parts):
+                            rule_table_id = int(parts[table_idx])
+
+                            # Delete if it's not the table we want to keep
+                            if rule_table_id != keep_table_id:
+                                # Extract priority
+                                priority = int(parts[0].rstrip(':'))
+                                subprocess.run(
+                                    ["ip", "rule", "delete", "prio", str(priority)],
+                                    capture_output=True,
+                                    check=False
+                                )
+                                logger.info(f"Removed duplicate rule: priority {priority}, table {rule_table_id} for {device_ip}")
+
+        except Exception as e:
+            logger.warning(f"Error during rule cleanup for {device_ip}: {e}")
+
     async def enable_device_routing(self, device_ip: str, pia_interface: str) -> bool:
         """Enable routing for a specific device IP through a PIA interface.
 
@@ -150,6 +190,9 @@ class RoutingService:
                 self.next_table_id += 1
 
             table_id = self.device_table_map[device_ip]
+
+            # Clean up any duplicate rules for this device FIRST
+            await self.cleanup_duplicate_rules(device_ip, table_id)
 
             # Check if route already exists
             result = subprocess.run(
