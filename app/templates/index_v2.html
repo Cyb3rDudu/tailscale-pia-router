@@ -1326,11 +1326,8 @@
 
                             if (group.isMulti) {
                                 // Multiple endpoints in same country - create grouped node
-                                // Show country name + list of cities
-                                const cityList = group.cities ? group.cities.join(', ') : '';
-                                const groupLabel = cityList ?
-                                    `${group.countryName}: ${cityList}` :
-                                    `${group.countryName} (${group.endpoints.length} endpoints)`;
+                                // Label is just country name (cities rendered separately as tspans)
+                                const groupLabel = group.countryName;
 
                                 const groupNode = {
                                     id: `endpoint-group-${group.lat}-${group.lon}`,
