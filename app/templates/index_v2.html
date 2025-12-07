@@ -790,7 +790,7 @@
                             color,
                             isActive: !isDimmed,
                             zIndex: index,  // DOM order
-                            speed: 0.003  // Animation speed
+                            speed: 0.008  // Animation speed (faster movement)
                         });
                     });
                 },
@@ -842,9 +842,9 @@
                         // Set opacity based on active state
                         ctx.globalAlpha = route.isActive ? 0.8 : 0.25;
 
-                        // Draw smaller, fewer dash segments per route (GPU optimization)
-                        const dashCount = 1;
-                        const dashLength = Math.floor(len * 0.06);  // 6% of path length (smaller dashes)
+                        // Draw many small dashes covering ~50% of path
+                        const dashCount = 8;  // More dashes for fuller coverage
+                        const dashLength = Math.floor(len * 0.04);  // 4% of path length (tiny dashes)
 
                         for (let d = 0; d < dashCount; d++) {
                             // Calculate phase offset
