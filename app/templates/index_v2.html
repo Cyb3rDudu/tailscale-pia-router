@@ -1181,38 +1181,67 @@
                     const tiltRadians = (tiltAngle * Math.PI) / 180;
 
                     // Create endpoint nodes at CORRECT geographic locations using ipapi.co metadata
+                    // Group endpoints by physical location to handle multiple endpoints at same coordinates
+                    const locationGroups = this.groupEndpointsByLocation(this.vpnStatus.connections);
                     const endpointNodes = {};
-                    this.vpnStatus.connections.forEach((conn) => {
-                        const metadata = this.endpointMetadata[conn.endpoint_ip];
 
-                        // Only render if we have valid lat/lon
-                        if (!metadata || typeof metadata.lat !== 'number' || typeof metadata.lon !== 'number') {
-                            console.warn(`Skipping endpoint ${conn.region_id} - no valid location data yet`);
-                            return;
-                        }
-
-                        const projectedCoords = projection([metadata.lon, metadata.lat]);
+                    locationGroups.forEach((group) => {
+                        const projectedCoords = projection([group.lon, group.lat]);
 
                         if (projectedCoords) {
                             const [x, y] = projectedCoords;
 
-                            const endpointNode = {
-                                id: `endpoint-${conn.region_id}`,
-                                label: conn.region_name,
-                                type: 'endpoint',
-                                region_id: conn.region_id,
-                                endpoint_ip: conn.endpoint_ip,
-                                countryCode: metadata.countryCode,
-                                city: metadata.city,
-                                lat: metadata.lat,
-                                lon: metadata.lon,
-                                locationUnknown: metadata.locationUnknown || false,
-                                x: x,
-                                y: y
-                            };
+                            if (group.isMulti) {
+                                // Multiple endpoints at same location - create grouped node
+                                const groupLabel = group.city ?
+                                    `${group.city} (${group.endpoints.length} endpoints)` :
+                                    `${group.countryName} (${group.endpoints.length} endpoints)`;
 
-                            nodes.push(endpointNode);
-                            endpointNodes[conn.region_id] = endpointNode;
+                                const groupNode = {
+                                    id: `endpoint-group-${group.lat}-${group.lon}`,
+                                    label: groupLabel,
+                                    type: 'endpoint',
+                                    isGroup: true,
+                                    groupedEndpoints: group.endpoints,
+                                    countryCode: group.countryCode,
+                                    city: group.city,
+                                    lat: group.lat,
+                                    lon: group.lon,
+                                    locationUnknown: group.endpoints.some(e => this.endpointMetadata[e.endpoint_ip]?.locationUnknown),
+                                    x: x,
+                                    y: y
+                                };
+
+                                nodes.push(groupNode);
+
+                                // Map all region_ids in this group to the same node
+                                group.endpoints.forEach(conn => {
+                                    endpointNodes[conn.region_id] = groupNode;
+                                });
+                            } else {
+                                // Single endpoint at this location
+                                const conn = group.endpoints[0];
+                                const metadata = this.endpointMetadata[conn.endpoint_ip];
+
+                                const endpointNode = {
+                                    id: `endpoint-${conn.region_id}`,
+                                    label: conn.region_name,
+                                    type: 'endpoint',
+                                    isGroup: false,
+                                    region_id: conn.region_id,
+                                    endpoint_ip: conn.endpoint_ip,
+                                    countryCode: metadata.countryCode,
+                                    city: metadata.city,
+                                    lat: metadata.lat,
+                                    lon: metadata.lon,
+                                    locationUnknown: metadata.locationUnknown || false,
+                                    x: x,
+                                    y: y
+                                };
+
+                                nodes.push(endpointNode);
+                                endpointNodes[conn.region_id] = endpointNode;
+                            }
                         }
                     });
 
@@ -1386,10 +1415,26 @@
                         .append('g')
                         .attr('class', 'endpoint-node')
                         .on('click', (event, d) => {
-                            this.selectEndpointFilter(d.region_id);
+                            // For grouped endpoints, select the first region in the group
+                            if (d.isGroup && d.groupedEndpoints && d.groupedEndpoints.length > 0) {
+                                this.selectEndpointFilter(d.groupedEndpoints[0].region_id);
+                            } else {
+                                this.selectEndpointFilter(d.region_id);
+                            }
                         });
 
-                    endpointNodeEnter.append('circle').attr('r', 6);  // Global View: smaller for spacious feeling
+                    endpointNodeEnter.append('circle')
+                        .attr('class', 'endpoint-marker')
+                        .attr('r', 6);  // Global View: smaller for spacious feeling
+
+                    // Add outer ring for grouped endpoints
+                    endpointNodeEnter.append('circle')
+                        .attr('class', 'endpoint-group-ring')
+                        .attr('r', 10)
+                        .attr('fill', 'none')
+                        .attr('stroke', '#10b981')
+                        .attr('stroke-width', 2)
+                        .attr('opacity', 0);  // Hidden by default, shown only for groups
 
                     const allEndpointNodes = endpointNodeEnter.merge(endpointNode);
 
@@ -1398,10 +1443,14 @@
                         .classed('selected', d => this.selectedEndpoint === d.region_id)
                         .classed('dimmed', d => isFiltered && this.selectedEndpoint !== d.region_id);
 
-                    allEndpointNodes.select('circle')
+                    allEndpointNodes.select('circle.endpoint-marker')
                         .attr('fill', '#10b981')
                         .attr('stroke', '#fff')
                         .attr('stroke-width', 1.5);
+
+                    // Show outer ring only for grouped endpoints
+                    allEndpointNodes.select('circle.endpoint-group-ring')
+                        .attr('opacity', d => d.isGroup ? 0.6 : 0);
 
                     // Update labels - FIXED for mesh nodes, collision-avoiding for endpoints
                     labelsLayer.selectAll('*').remove();
