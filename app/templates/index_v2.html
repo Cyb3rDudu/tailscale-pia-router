@@ -170,23 +170,14 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        /* Unified endpoint pill styles */
-        .endpoint-pill-unified {
+        /* Two-line endpoint pill styles */
+        .endpoint-pill-two-line {
             border-width: 1px;
+            min-height: 56px;
         }
 
-        .endpoint-pill-unified:hover:not(.bg-blue-600) {
+        .endpoint-pill-two-line:hover:not(.bg-blue-600) {
             background-color: #334155 !important;
-        }
-
-        /* Hide scrollbar but keep functionality */
-        .scrollbar-hide::-webkit-scrollbar {
-            display: none;
-        }
-
-        .scrollbar-hide {
-            -ms-overflow-style: none;
-            scrollbar-width: none;
         }
 
         /* Hover state for slate-750 */
@@ -284,81 +275,44 @@
         </div>
     </header>
 
-    <!-- Endpoint Pills (80px) - Horizontal Scrollable Chip Strip -->
-    <div class="bg-slate-900 border-b border-slate-800 px-6 py-3 relative">
-        <div class="flex items-center space-x-3">
-            <span class="text-sm text-slate-400 flex-shrink-0">Filter:</span>
+    <!-- Endpoint Pills - Multi-Row Wrap, Two-Line Layout -->
+    <div class="bg-slate-900 border-b border-slate-800 px-6 py-3">
+        <div class="flex items-start gap-2 flex-wrap">
+            <span class="text-sm text-slate-400 flex-shrink-0 leading-[56px]">Filter:</span>
 
-            <!-- Scroll Left Button -->
-            <button
-                @click="scrollPillsContainer(-200)"
-                class="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded-full border border-slate-700 transition-colors z-10"
-                :class="pillsScrollPosition <= 0 ? 'opacity-30 cursor-not-allowed' : 'opacity-100'">
-                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            <!-- All Endpoints Pill (Two-Line) -->
+            <div
+                class="endpoint-pill-two-line flex items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0 cursor-pointer transition-all border h-[56px]"
+                :class="selectedEndpoint === null ? 'bg-blue-600 border-blue-500' : 'bg-slate-800 border-slate-700 hover:bg-slate-750'"
+                @click="clearEndpointFilter()">
+                <svg class="w-5 h-5 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
-            </button>
-
-            <!-- Pills Container with Overflow -->
-            <div class="relative flex-1 overflow-hidden">
-                <!-- Fade gradients -->
-                <div class="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-slate-900 to-transparent pointer-events-none z-10"
-                     x-show="pillsScrollPosition > 0"></div>
-                <div class="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-900 to-transparent pointer-events-none z-10"
-                     x-show="pillsCanScrollRight"></div>
-
-                <!-- Scrollable pills container -->
-                <div x-ref="pillsContainer"
-                     @scroll="updatePillsScrollState()"
-                     class="flex items-center space-x-2 overflow-x-auto scrollbar-hide scroll-smooth"
-                     style="scrollbar-width: none; -ms-overflow-style: none;">
-
-                    <!-- All Endpoints Pill -->
-                    <div
-                        class="endpoint-pill-unified flex items-center space-x-2 rounded-lg px-4 py-2.5 flex-shrink-0 cursor-pointer transition-all"
-                        :class="selectedEndpoint === null ? 'bg-blue-600 border-blue-500' : 'bg-slate-800 border-slate-700 hover:bg-slate-750'"
-                        @click="clearEndpointFilter()">
-                        <svg class="w-4 h-4 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        <span class="font-semibold text-white text-sm whitespace-nowrap">All Endpoints</span>
-                    </div>
-
-                    <!-- Endpoint Pills -->
-                    <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
-                        <div
-                            class="endpoint-pill-unified flex items-center space-x-2 rounded-lg px-4 py-2.5 flex-shrink-0 cursor-pointer transition-all border"
-                            :class="selectedEndpoint === conn.region_id ? 'bg-blue-600 border-blue-500' : 'bg-slate-800 border-slate-700 hover:bg-slate-750'"
-                            @click="selectEndpointFilter(conn.region_id); fetchEndpointMetadata(conn.endpoint_ip)">
-
-                            <!-- Country flag -->
-                            <span class="text-base flex-shrink-0" x-text="getCountryFlagEmoji(endpointMetadata[conn.endpoint_ip]?.countryCode || '??')"></span>
-
-                            <!-- Region name (bold) -->
-                            <span class="font-semibold text-white text-sm whitespace-nowrap" x-text="conn.region_name"></span>
-
-                            <!-- Endpoint IP (lighter, smaller) -->
-                            <span class="text-slate-300 text-xs font-mono whitespace-nowrap" x-text="conn.endpoint_ip || '...'"></span>
-
-                            <!-- Device count -->
-                            <span class="text-slate-300 text-xs whitespace-nowrap flex-shrink-0">
-                                (<span x-text="devices.filter(d => d.region_id === conn.region_id && d.routing_enabled).length"></span>
-                                <span x-text="devices.filter(d => d.region_id === conn.region_id && d.routing_enabled).length === 1 ? 'device' : 'devices'"></span>)
-                            </span>
-                        </div>
-                    </template>
+                <div class="flex flex-col justify-center">
+                    <span class="font-semibold text-white text-sm leading-tight">All Endpoints</span>
+                    <span class="text-slate-300 text-xs leading-tight">Global View</span>
                 </div>
             </div>
 
-            <!-- Scroll Right Button -->
-            <button
-                @click="scrollPillsContainer(200)"
-                class="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded-full border border-slate-700 transition-colors z-10"
-                :class="!pillsCanScrollRight ? 'opacity-30 cursor-not-allowed' : 'opacity-100'">
-                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                </svg>
-            </button>
+            <!-- Endpoint Pills (Two-Line) -->
+            <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
+                <div
+                    class="endpoint-pill-two-line flex items-center gap-2 rounded-lg px-3 py-2 flex-shrink-0 cursor-pointer transition-all border h-[56px]"
+                    :class="selectedEndpoint === conn.region_id ? 'bg-blue-600 border-blue-500' : 'bg-slate-800 border-slate-700 hover:bg-slate-750'"
+                    @click="selectEndpointFilter(conn.region_id); fetchEndpointMetadata(conn.endpoint_ip)">
+
+                    <!-- Country flag -->
+                    <span class="text-xl flex-shrink-0 leading-none" x-text="getCountryFlagEmoji(endpointMetadata[conn.endpoint_ip]?.countryCode || '??')"></span>
+
+                    <!-- Two-line text layout -->
+                    <div class="flex flex-col justify-center min-w-0">
+                        <!-- Line 1: Endpoint name (bold) -->
+                        <span class="font-semibold text-white text-sm leading-tight truncate" x-text="conn.region_name"></span>
+                        <!-- Line 2: IP address -->
+                        <span class="text-slate-300 text-xs font-mono leading-tight" x-text="conn.endpoint_ip || '...'"></span>
+                    </div>
+                </div>
+            </template>
         </div>
     </div>
 
@@ -532,38 +486,16 @@
                 networkGraph: null,
                 resizeObserver: null,
                 endpointMetadata: {},  // Cache for endpoint IP/country data from ipapi.co
-                pillsScrollPosition: 0,
-                pillsCanScrollRight: false,
 
                 get filteredDevices() {
                     if (this.selectedEndpoint === null) return this.devices;
                     return this.devices.filter(d => d.region_id === this.selectedEndpoint && d.routing_enabled);
                 },
 
-                scrollPillsContainer(amount) {
-                    const container = this.$refs.pillsContainer;
-                    if (container) {
-                        container.scrollBy({ left: amount, behavior: 'smooth' });
-                    }
-                },
-
-                updatePillsScrollState() {
-                    const container = this.$refs.pillsContainer;
-                    if (container) {
-                        this.pillsScrollPosition = container.scrollLeft;
-                        this.pillsCanScrollRight = container.scrollLeft < (container.scrollWidth - container.clientWidth - 1);
-                    }
-                },
-
                 async init() {
                     await this.loadRegions();
                     await this.refreshStatus();
                     await this.initTopologyGraph();
-
-                    // Initialize scroll state
-                    this.$nextTick(() => {
-                        this.updatePillsScrollState();
-                    });
 
                     // Poll status every 5 seconds
                     this.pollInterval = setInterval(() => {
@@ -943,57 +875,63 @@
                     return distance < radius;
                 },
 
-                // Find best label position avoiding collisions
+                // Find best label position avoiding collisions (ENDPOINT LABELS ONLY)
                 findBestLabelPosition(node, labelText, allCircles, placedLabels) {
-                    const fontSize = node.type === 'endpoint' ? 12 : 11;
+                    const fontSize = 12;  // Endpoint labels only
                     const estimatedWidth = labelText.length * fontSize * 0.6; // Rough estimate
                     const estimatedHeight = fontSize + 4;
-                    const markerRadius = node.type === 'endpoint' ? 6 : 14;
-                    const padding = 4;
+                    const markerRadius = 6;  // Endpoint marker radius
+                    const padding = 6;
 
-                    // Candidate positions in priority order
+                    // Candidate positions in priority order (as specified)
                     const candidates = [
-                        // Right of marker
+                        // 1. Right of marker (DEFAULT)
                         {
                             x: node.x + markerRadius + padding,
                             y: node.y - estimatedHeight / 2,
                             anchor: 'start',
-                            yOffset: fontSize / 2
+                            yOffset: fontSize / 2,
+                            needsLeaderLine: false
                         },
-                        // Left of marker
+                        // 2. Left of marker
                         {
                             x: node.x - markerRadius - padding - estimatedWidth,
                             y: node.y - estimatedHeight / 2,
                             anchor: 'end',
-                            yOffset: fontSize / 2
+                            yOffset: fontSize / 2,
+                            needsLeaderLine: false
                         },
-                        // Above marker
-                        {
-                            x: node.x - estimatedWidth / 2,
-                            y: node.y - markerRadius - padding - estimatedHeight,
-                            anchor: 'middle',
-                            yOffset: fontSize
-                        },
-                        // Below marker
+                        // 3. Below marker
                         {
                             x: node.x - estimatedWidth / 2,
                             y: node.y + markerRadius + padding,
                             anchor: 'middle',
-                            yOffset: fontSize
+                            yOffset: fontSize,
+                            needsLeaderLine: false
                         },
-                        // Diagonal above-right
+                        // 4. Above marker
+                        {
+                            x: node.x - estimatedWidth / 2,
+                            y: node.y - markerRadius - padding - estimatedHeight,
+                            anchor: 'middle',
+                            yOffset: fontSize,
+                            needsLeaderLine: false
+                        },
+                        // 5. Diagonal above-right
                         {
                             x: node.x + markerRadius * 0.7 + padding,
                             y: node.y - markerRadius * 0.7 - padding - estimatedHeight,
                             anchor: 'start',
-                            yOffset: fontSize
+                            yOffset: fontSize,
+                            needsLeaderLine: true
                         },
-                        // Diagonal above-left
+                        // 6. Diagonal above-left
                         {
                             x: node.x - markerRadius * 0.7 - padding - estimatedWidth,
                             y: node.y - markerRadius * 0.7 - padding - estimatedHeight,
                             anchor: 'end',
-                            yOffset: fontSize
+                            yOffset: fontSize,
+                            needsLeaderLine: true
                         }
                     ];
 
@@ -1035,23 +973,27 @@
                                    node.x + markerRadius + padding,
                                 y: candidate.y + candidate.yOffset,
                                 anchor: candidate.anchor,
-                                bbox: bbox
+                                bbox: bbox,
+                                needsLeaderLine: candidate.needsLeaderLine
                             };
                         }
                     }
 
-                    // Fallback: use default position (below marker) with smaller font
+                    // Fallback: use default position (right of marker) with smaller font and leader line
+                    const reducedFontSize = fontSize * 0.9;
+                    const reducedWidth = labelText.length * reducedFontSize * 0.6;
                     return {
-                        x: node.x,
-                        y: node.y + markerRadius + padding + fontSize,
-                        anchor: 'middle',
+                        x: node.x + markerRadius + padding,
+                        y: node.y,
+                        anchor: 'start',
                         bbox: {
-                            x: node.x - estimatedWidth / 2,
-                            y: node.y + markerRadius + padding,
-                            width: estimatedWidth,
-                            height: estimatedHeight
+                            x: node.x + markerRadius + padding,
+                            y: node.y - reducedFontSize / 2,
+                            width: reducedWidth,
+                            height: reducedFontSize + 4
                         },
-                        reducedFont: true
+                        reducedFont: true,
+                        needsLeaderLine: true
                     };
                 },
 
@@ -1279,10 +1221,10 @@
                         .attr('stroke', '#fff')
                         .attr('stroke-width', 1.5);
 
-                    // Update labels with smart collision avoidance
+                    // Update labels - FIXED for mesh nodes, collision-avoiding for endpoints
                     labelsLayer.selectAll('*').remove();
 
-                    // Build list of all circles (for collision detection)
+                    // Build list of all circles (for endpoint collision detection)
                     const allCircles = [
                         ...deviceNodes.map(n => ({ x: n.x, y: n.y, radius: 14 })),
                         ...nodes.filter(n => n.type === 'endpoint').map(n => ({ x: n.x, y: n.y, radius: 6 }))
@@ -1290,28 +1232,24 @@
 
                     const placedLabels = [];
 
-                    // Mesh labels (with collision avoidance)
+                    // MESH NODE LABELS - FIXED POSITION (centered below, no collision avoidance)
                     deviceNodes.forEach(node => {
                         const labelText = node.label.length > 10 ? node.label.substring(0, 10) + '...' : node.label;
-                        const position = this.findBestLabelPosition(node, labelText, allCircles, placedLabels);
 
                         labelsLayer.append('text')
                             .attr('class', 'mesh-label')
-                            .attr('x', position.x)
-                            .attr('y', position.y)
-                            .attr('text-anchor', position.anchor)
+                            .attr('x', node.x)
+                            .attr('y', node.y + 26)  // Fixed offset below node
+                            .attr('text-anchor', 'middle')  // Always centered
                             .classed('dimmed', isFiltered && node.region_id !== this.selectedEndpoint)
-                            .style('font-size', position.reducedFont ? '10px' : '11px')
                             .text(labelText);
-
-                        placedLabels.push(position.bbox);
                     });
 
-                    // Endpoint labels (with collision avoidance)
+                    // ENDPOINT LABELS - COLLISION AVOIDANCE ENABLED
                     nodes.filter(n => n.type === 'endpoint').forEach(node => {
                         const position = this.findBestLabelPosition(node, node.label, allCircles, placedLabels);
 
-                        labelsLayer.append('text')
+                        const label = labelsLayer.append('text')
                             .attr('class', 'endpoint-label')
                             .attr('x', position.x)
                             .attr('y', position.y)
@@ -1319,6 +1257,19 @@
                             .classed('dimmed', isFiltered && this.selectedEndpoint !== node.region_id)
                             .style('font-size', position.reducedFont ? '10px' : '12px')
                             .text(node.label);
+
+                        // Add leader line if label was repositioned far from marker
+                        if (position.needsLeaderLine) {
+                            labelsLayer.append('line')
+                                .attr('x1', node.x)
+                                .attr('y1', node.y)
+                                .attr('x2', position.x)
+                                .attr('y2', position.y - 4)
+                                .attr('stroke', '#64748b')
+                                .attr('stroke-width', 0.5)
+                                .attr('stroke-dasharray', '2,2')
+                                .attr('opacity', 0.5);
+                        }
 
                         placedLabels.push(position.bbox);
                     });
