@@ -567,7 +567,7 @@
                         if (this.vpnStatus.connections) {
                             const metadataPromises = this.vpnStatus.connections
                                 .filter(conn => conn.endpoint_ip)
-                                .map(conn => this.fetchEndpointMetadata(conn.endpoint_ip));
+                                .map(conn => this.fetchEndpointMetadata(conn.endpoint_ip, conn.region_id));
 
                             await Promise.all(metadataPromises);
                             console.log('✓ All endpoint metadata loaded');
@@ -662,7 +662,22 @@
                     return groups;
                 },
 
-                async fetchEndpointMetadata(endpointIP) {
+                // Guess country code from region ID
+                guessCountryFromRegion(regionId) {
+                    const id = regionId.toLowerCase();
+                    if (id.includes('aus') || id.includes('melbourne') || id.includes('sydney') || id.includes('perth')) return 'AU';
+                    if (id.includes('japan') || id.includes('jp') || id.includes('tokyo')) return 'JP';
+                    if (id.includes('singapore') || id === 'sg') return 'SG';
+                    if (id.includes('cambodia') || id === 'kh') return 'KH';
+                    if (id.includes('alaska') || id.includes('us')) return 'US';
+                    if (id.includes('monaco') || id === 'mc') return 'MC';
+                    if (id.includes('hong') || id === 'hk') return 'HK';
+                    if (id.includes('india') || id.includes('mumbai')) return 'IN';
+                    if (id.includes('zealand') || id === 'nz') return 'NZ';
+                    return null;
+                },
+
+                async fetchEndpointMetadata(endpointIP, regionId = null) {
                     // Check cache first
                     if (this.endpointMetadata[endpointIP]) {
                         return this.endpointMetadata[endpointIP];
@@ -694,12 +709,14 @@
                     } catch (error) {
                         console.warn(`⚠ Failed to fetch metadata for ${endpointIP}, using fallback:`, error);
 
-                        // Try to guess country from region ID or use default fallback
-                        const fallback = this.getFallbackLocation('AU'); // Default to Australia
+                        // Try to guess country from region ID
+                        const guessedCountry = regionId ? this.guessCountryFromRegion(regionId) : null;
+                        const fallbackCountry = guessedCountry || 'AU'; // Default to Australia if can't guess
+                        const fallback = this.getFallbackLocation(fallbackCountry);
 
                         const metadata = {
                             ip: endpointIP,
-                            countryCode: '??',
+                            countryCode: guessedCountry || '??',
                             countryName: fallback.countryName,
                             city: fallback.city,
                             lat: fallback.lat,
@@ -708,6 +725,7 @@
                         };
 
                         this.endpointMetadata[endpointIP] = metadata;
+                        console.log(`⚠ Using fallback for ${endpointIP} (${regionId}): ${metadata.countryCode} ${metadata.city} (${metadata.lat}, ${metadata.lon})`);
                         return metadata;
                     }
                 },
