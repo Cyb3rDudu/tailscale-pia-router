@@ -170,21 +170,28 @@
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
 
-        /* Endpoint pill styles */
-        .endpoint-pill {
-            transition: all 0.3s ease;
-            cursor: pointer;
+        /* Unified endpoint pill styles */
+        .endpoint-pill-unified {
+            border-width: 1px;
         }
 
-        .endpoint-pill:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        .endpoint-pill-unified:hover:not(.bg-blue-600) {
+            background-color: #334155 !important;
         }
 
-        .endpoint-pill.active {
-            background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+        /* Hide scrollbar but keep functionality */
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* Hover state for slate-750 */
+        .hover\:bg-slate-750:hover {
+            background-color: #334155;
         }
 
         /* Map expand toggle button */
@@ -277,48 +284,81 @@
         </div>
     </header>
 
-    <!-- Endpoint Pills (80px) -->
-    <div class="bg-slate-900 border-b border-slate-800 px-6 py-3">
-        <div class="flex items-start space-x-3 flex-wrap gap-y-2">
-            <span class="text-sm text-slate-400 flex-shrink-0 leading-10">Filter:</span>
+    <!-- Endpoint Pills (80px) - Horizontal Scrollable Chip Strip -->
+    <div class="bg-slate-900 border-b border-slate-800 px-6 py-3 relative">
+        <div class="flex items-center space-x-3">
+            <span class="text-sm text-slate-400 flex-shrink-0">Filter:</span>
 
-            <!-- All Endpoints Pill -->
-            <div
-                class="all-endpoints-pill flex items-center space-x-2 rounded-lg px-4 py-2 flex-shrink-0"
-                :class="selectedEndpoint === null ? 'active' : ''"
-                @click="clearEndpointFilter()">
+            <!-- Scroll Left Button -->
+            <button
+                @click="scrollPillsContainer(-200)"
+                class="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded-full border border-slate-700 transition-colors z-10"
+                :class="pillsScrollPosition <= 0 ? 'opacity-30 cursor-not-allowed' : 'opacity-100'">
                 <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
                 </svg>
-                <span class="font-semibold text-white text-sm">All Endpoints</span>
+            </button>
+
+            <!-- Pills Container with Overflow -->
+            <div class="relative flex-1 overflow-hidden">
+                <!-- Fade gradients -->
+                <div class="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-slate-900 to-transparent pointer-events-none z-10"
+                     x-show="pillsScrollPosition > 0"></div>
+                <div class="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-slate-900 to-transparent pointer-events-none z-10"
+                     x-show="pillsCanScrollRight"></div>
+
+                <!-- Scrollable pills container -->
+                <div x-ref="pillsContainer"
+                     @scroll="updatePillsScrollState()"
+                     class="flex items-center space-x-2 overflow-x-auto scrollbar-hide scroll-smooth"
+                     style="scrollbar-width: none; -ms-overflow-style: none;">
+
+                    <!-- All Endpoints Pill -->
+                    <div
+                        class="endpoint-pill-unified flex items-center space-x-2 rounded-lg px-4 py-2.5 flex-shrink-0 cursor-pointer transition-all"
+                        :class="selectedEndpoint === null ? 'bg-blue-600 border-blue-500' : 'bg-slate-800 border-slate-700 hover:bg-slate-750'"
+                        @click="clearEndpointFilter()">
+                        <svg class="w-4 h-4 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span class="font-semibold text-white text-sm whitespace-nowrap">All Endpoints</span>
+                    </div>
+
+                    <!-- Endpoint Pills -->
+                    <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
+                        <div
+                            class="endpoint-pill-unified flex items-center space-x-2 rounded-lg px-4 py-2.5 flex-shrink-0 cursor-pointer transition-all border"
+                            :class="selectedEndpoint === conn.region_id ? 'bg-blue-600 border-blue-500' : 'bg-slate-800 border-slate-700 hover:bg-slate-750'"
+                            @click="selectEndpointFilter(conn.region_id); fetchEndpointMetadata(conn.endpoint_ip)">
+
+                            <!-- Country flag -->
+                            <span class="text-base flex-shrink-0" x-text="getCountryFlagEmoji(endpointMetadata[conn.endpoint_ip]?.countryCode || '??')"></span>
+
+                            <!-- Region name (bold) -->
+                            <span class="font-semibold text-white text-sm whitespace-nowrap" x-text="conn.region_name"></span>
+
+                            <!-- Endpoint IP (lighter, smaller) -->
+                            <span class="text-slate-300 text-xs font-mono whitespace-nowrap" x-text="conn.endpoint_ip || '...'"></span>
+
+                            <!-- Device count -->
+                            <span class="text-slate-300 text-xs whitespace-nowrap flex-shrink-0">
+                                (<span x-text="devices.filter(d => d.region_id === conn.region_id && d.routing_enabled).length"></span>
+                                <span x-text="devices.filter(d => d.region_id === conn.region_id && d.routing_enabled).length === 1 ? 'device' : 'devices'"></span>)
+                            </span>
+                        </div>
+                    </template>
+                </div>
             </div>
 
-            <!-- Endpoint Pills -->
-            <template x-for="conn in vpnStatus.connections" :key="conn.region_id">
-                <div
-                    class="endpoint-pill flex items-center space-x-2 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 flex-shrink-0"
-                    :class="selectedEndpoint === conn.region_id ? 'active' : ''"
-                    @click="selectEndpointFilter(conn.region_id); fetchEndpointMetadata(conn.endpoint_ip)">
-                    <!-- Status dot -->
-                    <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
-
-                    <!-- Country flag -->
-                    <span class="text-lg flex-shrink-0" x-text="getCountryFlagEmoji(endpointMetadata[conn.endpoint_ip]?.countryCode || '??')"></span>
-
-                    <!-- Region name -->
-                    <span class="font-medium text-white" x-text="conn.region_name"></span>
-
-                    <!-- Endpoint IP -->
-                    <span class="text-slate-400 text-xs font-mono" x-text="conn.endpoint_ip || '...'"></span>
-
-                    <!-- Device count -->
-                    <span class="text-slate-400 text-sm flex-shrink-0">
-                        (<span x-text="devices.filter(d => d.region_id === conn.region_id && d.routing_enabled).length"></span>
-                        <span x-text="devices.filter(d => d.region_id === conn.region_id && d.routing_enabled).length === 1 ? 'device' : 'devices'"></span>)
-                    </span>
-                </div>
-            </template>
-            <div x-show="vpnStatus.connections.length === 0" class="text-slate-500 text-sm">No active VPN connections</div>
+            <!-- Scroll Right Button -->
+            <button
+                @click="scrollPillsContainer(200)"
+                class="flex-shrink-0 w-8 h-8 flex items-center justify-center bg-slate-800 hover:bg-slate-700 rounded-full border border-slate-700 transition-colors z-10"
+                :class="!pillsCanScrollRight ? 'opacity-30 cursor-not-allowed' : 'opacity-100'">
+                <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                </svg>
+            </button>
         </div>
     </div>
 
@@ -492,16 +532,38 @@
                 networkGraph: null,
                 resizeObserver: null,
                 endpointMetadata: {},  // Cache for endpoint IP/country data from ipapi.co
+                pillsScrollPosition: 0,
+                pillsCanScrollRight: false,
 
                 get filteredDevices() {
                     if (this.selectedEndpoint === null) return this.devices;
                     return this.devices.filter(d => d.region_id === this.selectedEndpoint && d.routing_enabled);
                 },
 
+                scrollPillsContainer(amount) {
+                    const container = this.$refs.pillsContainer;
+                    if (container) {
+                        container.scrollBy({ left: amount, behavior: 'smooth' });
+                    }
+                },
+
+                updatePillsScrollState() {
+                    const container = this.$refs.pillsContainer;
+                    if (container) {
+                        this.pillsScrollPosition = container.scrollLeft;
+                        this.pillsCanScrollRight = container.scrollLeft < (container.scrollWidth - container.clientWidth - 1);
+                    }
+                },
+
                 async init() {
                     await this.loadRegions();
                     await this.refreshStatus();
                     await this.initTopologyGraph();
+
+                    // Initialize scroll state
+                    this.$nextTick(() => {
+                        this.updatePillsScrollState();
+                    });
 
                     // Poll status every 5 seconds
                     this.pollInterval = setInterval(() => {
@@ -859,6 +921,140 @@
                     return distance < threshold;
                 },
 
+                // Check if two bounding boxes intersect
+                boxesIntersect(box1, box2) {
+                    return !(box1.x + box1.width < box2.x ||
+                             box2.x + box2.width < box1.x ||
+                             box1.y + box1.height < box2.y ||
+                             box2.y + box2.height < box1.y);
+                },
+
+                // Check if a label bounding box collides with a circle
+                boxIntersectsCircle(box, circle, radius) {
+                    // Find the closest point on the rectangle to the circle center
+                    const closestX = Math.max(box.x, Math.min(circle.x, box.x + box.width));
+                    const closestY = Math.max(box.y, Math.min(circle.y, box.y + box.height));
+
+                    // Calculate distance from closest point to circle center
+                    const dx = closestX - circle.x;
+                    const dy = closestY - circle.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    return distance < radius;
+                },
+
+                // Find best label position avoiding collisions
+                findBestLabelPosition(node, labelText, allCircles, placedLabels) {
+                    const fontSize = node.type === 'endpoint' ? 12 : 11;
+                    const estimatedWidth = labelText.length * fontSize * 0.6; // Rough estimate
+                    const estimatedHeight = fontSize + 4;
+                    const markerRadius = node.type === 'endpoint' ? 6 : 14;
+                    const padding = 4;
+
+                    // Candidate positions in priority order
+                    const candidates = [
+                        // Right of marker
+                        {
+                            x: node.x + markerRadius + padding,
+                            y: node.y - estimatedHeight / 2,
+                            anchor: 'start',
+                            yOffset: fontSize / 2
+                        },
+                        // Left of marker
+                        {
+                            x: node.x - markerRadius - padding - estimatedWidth,
+                            y: node.y - estimatedHeight / 2,
+                            anchor: 'end',
+                            yOffset: fontSize / 2
+                        },
+                        // Above marker
+                        {
+                            x: node.x - estimatedWidth / 2,
+                            y: node.y - markerRadius - padding - estimatedHeight,
+                            anchor: 'middle',
+                            yOffset: fontSize
+                        },
+                        // Below marker
+                        {
+                            x: node.x - estimatedWidth / 2,
+                            y: node.y + markerRadius + padding,
+                            anchor: 'middle',
+                            yOffset: fontSize
+                        },
+                        // Diagonal above-right
+                        {
+                            x: node.x + markerRadius * 0.7 + padding,
+                            y: node.y - markerRadius * 0.7 - padding - estimatedHeight,
+                            anchor: 'start',
+                            yOffset: fontSize
+                        },
+                        // Diagonal above-left
+                        {
+                            x: node.x - markerRadius * 0.7 - padding - estimatedWidth,
+                            y: node.y - markerRadius * 0.7 - padding - estimatedHeight,
+                            anchor: 'end',
+                            yOffset: fontSize
+                        }
+                    ];
+
+                    // Try each candidate position
+                    for (const candidate of candidates) {
+                        const bbox = {
+                            x: candidate.anchor === 'middle' ? candidate.x :
+                               candidate.anchor === 'end' ? candidate.x - estimatedWidth : candidate.x,
+                            y: candidate.y,
+                            width: estimatedWidth,
+                            height: estimatedHeight
+                        };
+
+                        let hasCollision = false;
+
+                        // Check collision with all circles
+                        for (const circle of allCircles) {
+                            if (this.boxIntersectsCircle(bbox, circle, circle.radius)) {
+                                hasCollision = true;
+                                break;
+                            }
+                        }
+
+                        // Check collision with previously placed labels
+                        if (!hasCollision) {
+                            for (const placedLabel of placedLabels) {
+                                if (this.boxesIntersect(bbox, placedLabel)) {
+                                    hasCollision = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // If no collision, use this position
+                        if (!hasCollision) {
+                            return {
+                                x: candidate.anchor === 'middle' ? node.x :
+                                   candidate.anchor === 'end' ? node.x - markerRadius - padding :
+                                   node.x + markerRadius + padding,
+                                y: candidate.y + candidate.yOffset,
+                                anchor: candidate.anchor,
+                                bbox: bbox
+                            };
+                        }
+                    }
+
+                    // Fallback: use default position (below marker) with smaller font
+                    return {
+                        x: node.x,
+                        y: node.y + markerRadius + padding + fontSize,
+                        anchor: 'middle',
+                        bbox: {
+                            x: node.x - estimatedWidth / 2,
+                            y: node.y + markerRadius + padding,
+                            width: estimatedWidth,
+                            height: estimatedHeight
+                        },
+                        reducedFont: true
+                    };
+                },
+
                 updateTopologyGraph() {
                     if (!this.networkGraph) return;
 
@@ -1083,31 +1279,48 @@
                         .attr('stroke', '#fff')
                         .attr('stroke-width', 1.5);
 
-                    // Update labels
+                    // Update labels with smart collision avoidance
                     labelsLayer.selectAll('*').remove();
 
-                    // Mesh labels (with halo for readability)
+                    // Build list of all circles (for collision detection)
+                    const allCircles = [
+                        ...deviceNodes.map(n => ({ x: n.x, y: n.y, radius: 14 })),
+                        ...nodes.filter(n => n.type === 'endpoint').map(n => ({ x: n.x, y: n.y, radius: 6 }))
+                    ];
+
+                    const placedLabels = [];
+
+                    // Mesh labels (with collision avoidance)
                     deviceNodes.forEach(node => {
                         const labelText = node.label.length > 10 ? node.label.substring(0, 10) + '...' : node.label;
+                        const position = this.findBestLabelPosition(node, labelText, allCircles, placedLabels);
 
                         labelsLayer.append('text')
                             .attr('class', 'mesh-label')
-                            .attr('x', node.x)
-                            .attr('y', node.y + 26)
-                            .attr('text-anchor', 'middle')
+                            .attr('x', position.x)
+                            .attr('y', position.y)
+                            .attr('text-anchor', position.anchor)
                             .classed('dimmed', isFiltered && node.region_id !== this.selectedEndpoint)
+                            .style('font-size', position.reducedFont ? '10px' : '11px')
                             .text(labelText);
+
+                        placedLabels.push(position.bbox);
                     });
 
-                    // Endpoint labels (with halo for readability)
+                    // Endpoint labels (with collision avoidance)
                     nodes.filter(n => n.type === 'endpoint').forEach(node => {
+                        const position = this.findBestLabelPosition(node, node.label, allCircles, placedLabels);
+
                         labelsLayer.append('text')
                             .attr('class', 'endpoint-label')
-                            .attr('x', node.x)
-                            .attr('y', node.y + 24)
-                            .attr('text-anchor', 'middle')
+                            .attr('x', position.x)
+                            .attr('y', position.y)
+                            .attr('text-anchor', position.anchor)
                             .classed('dimmed', isFiltered && this.selectedEndpoint !== node.region_id)
+                            .style('font-size', position.reducedFont ? '10px' : '12px')
                             .text(node.label);
+
+                        placedLabels.push(position.bbox);
                     });
                 }
             }
