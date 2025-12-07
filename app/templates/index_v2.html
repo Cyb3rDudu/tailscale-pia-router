@@ -849,8 +849,11 @@
                         for (let d = 0; d < dashCount; d++) {
                             // Calculate phase offset
                             const offset = Math.floor((this.animationTime * route.speed + d * len / dashCount) % len);
-                            const startIndex = offset;
-                            const endIndex = (offset + dashLength) % len;
+                            const startIndex = Math.min(offset, len - 1);
+                            const endIndex = Math.min((offset + dashLength) % len, len - 1);
+
+                            // Safety check - ensure indices are valid
+                            if (startIndex >= len || !pts[startIndex]) continue;
 
                             ctx.beginPath();
                             ctx.strokeStyle = route.color;
@@ -862,20 +865,26 @@
                             if (endIndex > startIndex) {
                                 // Normal case - no wrap
                                 ctx.moveTo(pts[startIndex].x, pts[startIndex].y);
-                                for (let i = startIndex + 1; i <= endIndex; i++) {
-                                    ctx.lineTo(pts[i].x, pts[i].y);
+                                for (let i = startIndex + 1; i <= endIndex && i < len; i++) {
+                                    if (pts[i]) {
+                                        ctx.lineTo(pts[i].x, pts[i].y);
+                                    }
                                 }
                             } else {
                                 // Wrapped around end of array
                                 ctx.moveTo(pts[startIndex].x, pts[startIndex].y);
                                 for (let i = startIndex + 1; i < len; i++) {
-                                    ctx.lineTo(pts[i].x, pts[i].y);
+                                    if (pts[i]) {
+                                        ctx.lineTo(pts[i].x, pts[i].y);
+                                    }
                                 }
                                 // Continue from beginning
-                                if (endIndex > 0) {
+                                if (endIndex > 0 && pts[0]) {
                                     ctx.moveTo(pts[0].x, pts[0].y);
-                                    for (let i = 1; i <= endIndex; i++) {
-                                        ctx.lineTo(pts[i].x, pts[i].y);
+                                    for (let i = 1; i <= endIndex && i < len; i++) {
+                                        if (pts[i]) {
+                                            ctx.lineTo(pts[i].x, pts[i].y);
+                                        }
                                     }
                                 }
                             }
