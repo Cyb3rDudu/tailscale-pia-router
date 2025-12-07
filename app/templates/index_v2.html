@@ -397,22 +397,7 @@
 
                     <!-- Throughput Graph -->
                     <div class="mb-4">
-                        <div class="flex items-center justify-between mb-2">
-                            <h3 class="text-sm font-medium text-slate-300">Throughput</h3>
-                            <!-- Smooth/Raw Toggle -->
-                            <div class="flex gap-1 text-xs">
-                                <button @click="showRawData = false"
-                                        :class="!showRawData ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'"
-                                        class="px-2 py-1 rounded transition-colors">
-                                    Smoothed
-                                </button>
-                                <button @click="showRawData = true"
-                                        :class="showRawData ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'"
-                                        class="px-2 py-1 rounded transition-colors">
-                                    Raw
-                                </button>
-                            </div>
-                        </div>
+                        <h3 class="text-sm font-medium text-slate-300 mb-2">Throughput</h3>
                         <div id="throughput-chart" class="bg-slate-800 rounded p-2 border border-slate-700 relative transition-opacity duration-300"
                              :class="chartTransitioning ? 'opacity-50' : 'opacity-100'"
                              style="height: 180px;">
@@ -706,16 +691,6 @@
                             this.updateMetricsCharts();
                             this.chartTransitioning = false;
                         }, 300);
-                    });
-
-                    // Watch for smooth/raw toggle - destroy and recreate chart
-                    this.$watch('showRawData', () => {
-                        // Destroy chart to force recreation with new smoothing mode
-                        if (this.metricsCharts.throughput) {
-                            this.metricsCharts.throughput.destroy();
-                            this.metricsCharts.throughput = null;
-                        }
-                        this.updateMetricsCharts();
                     });
 
                     // Poll status every 5 seconds
@@ -2016,27 +1991,11 @@
                 const chartDiv = document.getElementById('throughput-chart');
                 if (!chartDiv) return;
 
-                // Apply smoothing if not in raw data mode
-                let rxData = [...data.rx];
-                let txData = [...data.tx];
-
-                if (!this.showRawData) {
-                    rxData = this.applySmoothingEMA(rxData, 0.3);
-                    txData = this.applySmoothingEMA(txData, 0.3);
-                }
-
-                // Calculate auto-scaling Y-axis range
-                const allValues = [...rxData, ...txData].filter(v => v !== null && v !== undefined);
-                const maxValue = allValues.length > 0 ? Math.max(...allValues) : 1000;
-                const minValue = 0;
-
-                // Add gentle clamping - max value with 10% headroom
-                const yMax = maxValue * 1.1;
-
+                // Simple chart data (no smoothing for better performance)
                 const chartData = [
                     [...data.timestamps],
-                    rxData,
-                    txData
+                    [...data.rx],
+                    [...data.tx]
                 ];
 
                 // Only create chart if it doesn't exist, otherwise just update data
@@ -2062,18 +2021,12 @@
                                 value: (self, rawValue) => rawValue == null ? '-' : this.formatBytes(rawValue) + '/s'
                             }
                         ],
-                        scales: {
-                            y: {
-                                auto: false,
-                                range: (self, dataMin, dataMax) => [minValue, yMax]
-                            }
-                        },
                         axes: [
                             { show: false },  // X-axis (time)
                             {  // Y-axis (bytes/s)
                                 stroke: '#9ca3af',
                                 grid: {
-                                    stroke: 'rgba(71, 85, 105, 0.3)',  // Subtle gridlines
+                                    stroke: '#374151',
                                     width: 1
                                 },
                                 values: (self, ticks) => ticks.map(v => this.formatBytes(v) + '/s'),
@@ -2082,26 +2035,24 @@
                         ],
                         legend: { show: false },
                         cursor: {
-                            drag: { x: false, y: false },
-                            focus: { prox: 30 },
-                            points: {
-                                size: 6,
-                                width: 1.5
-                            },
-                            sync: {
-                                key: 'metrics',
-                                setSeries: true
-                            }
+                            drag: { x: false, y: false }
                         }
                     };
 
                     this.metricsCharts.throughput = new uPlot(opts, chartData, chartDiv);
                 } else {
-                    // Just update the data - much more efficient!
-                    this.metricsCharts.throughput.setData(chartData);
-
-                    // Update Y-axis scale if needed
-                    this.metricsCharts.throughput.setScale('y', { min: minValue, max: yMax });
+                    // Just update the data - same as classic view
+                    const chart = this.metricsCharts.throughput;
+                    if (chart && chart.root && chart.root.isConnected) {
+                        try {
+                            chart.setData(chartData);
+                        } catch (e) {
+                            console.error('Chart update failed:', e);
+                            // Destroy broken chart
+                            chart.destroy();
+                            this.metricsCharts.throughput = null;
+                        }
+                    }
                 }
             },
 
