@@ -796,7 +796,7 @@
                             color,
                             isActive: !isDimmed,
                             zIndex: index,  // DOM order
-                            speed: 0.004,  // Animation speed (half speed: 0.008 → 0.004)
+                            speed: 0.006,  // Animation speed (sweet spot)
                             totalLength: trimmedLength  // Store for dash length calculation
                         });
                     });
@@ -846,8 +846,8 @@
                         const len = pts.length;
                         if (len < 2) return;
 
-                        // Set opacity based on active state
-                        ctx.globalAlpha = route.isActive ? 0.8 : 0.25;
+                        // Set opacity based on active state (reduced brightness)
+                        ctx.globalAlpha = route.isActive ? 0.5 : 0.2;
 
                         // Fixed-length dashes covering 50% of path
                         const fixedDashLengthPx = 10;  // Smaller 10px dashes (was 20px)
