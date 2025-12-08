@@ -924,9 +924,12 @@
                     const prevConnectionCount = this.vpnStatus.connections?.length || 0;
                     const prevDeviceCount = this.devices?.length || 0;
 
-                    // Store previous routing states
+                    // Store previous routing states and region assignments
                     const prevRoutingStates = new Set(
                         this.devices?.filter(d => d.routing_enabled).map(d => d.id) || []
+                    );
+                    const prevRegionMap = new Map(
+                        this.devices?.filter(d => d.routing_enabled).map(d => [d.id, d.region_id]) || []
                     );
 
                     await Promise.all([
@@ -949,7 +952,15 @@
                         [...prevRoutingStates].some(id => !currentRoutingStates.has(id)) ||
                         [...currentRoutingStates].some(id => !prevRoutingStates.has(id));
 
-                    if (connectionCountChanged || deviceCountChanged || routingStateChanged) {
+                    // Check if any device's region assignment changed
+                    const currentRegionMap = new Map(
+                        this.devices?.filter(d => d.routing_enabled).map(d => [d.id, d.region_id]) || []
+                    );
+                    const regionChanged = [...currentRegionMap].some(([id, region]) =>
+                        prevRegionMap.get(id) !== region
+                    );
+
+                    if (connectionCountChanged || deviceCountChanged || routingStateChanged || regionChanged) {
                         this.$nextTick(() => {
                             this.updateTopologyGraph();
                         });
