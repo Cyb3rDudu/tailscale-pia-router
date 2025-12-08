@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 import logging
 import asyncio
 import json
+import httpx
 
 from app.models import (
     PIAStatus,
@@ -242,6 +243,39 @@ async def get_connection_logs(limit: int = 50, offset: int = 0) -> ConnectionLog
 
     except Exception as e:
         logger.error(f"Failed to get connection logs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/geolocation/{ip}")
+async def get_geolocation(ip: str):
+    """Proxy geolocation requests to ipapi.co from server-side to avoid rate limiting.
+
+    Args:
+        ip: IP address to geolocate
+
+    Returns:
+        Geolocation data from ipapi.co
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"https://ipapi.co/{ip}/json/")
+
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail="Geolocation service unavailable")
+
+            data = response.json()
+
+            # Validate response
+            if not data.get("country_code") or "latitude" not in data or "longitude" not in data:
+                raise HTTPException(status_code=500, detail="Invalid geolocation data")
+
+            return data
+
+    except httpx.TimeoutException:
+        logger.error(f"Timeout fetching geolocation for {ip}")
+        raise HTTPException(status_code=504, detail="Geolocation service timeout")
+    except Exception as e:
+        logger.error(f"Failed to fetch geolocation for {ip}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
