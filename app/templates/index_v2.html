@@ -924,6 +924,11 @@
                     const prevConnectionCount = this.vpnStatus.connections?.length || 0;
                     const prevDeviceCount = this.devices?.length || 0;
 
+                    // Store previous routing states
+                    const prevRoutingStates = new Set(
+                        this.devices?.filter(d => d.routing_enabled).map(d => d.id) || []
+                    );
+
                     await Promise.all([
                         this.loadVPNStatus(),
                         this.loadTailscaleStatus(),
@@ -931,11 +936,20 @@
                         this.loadDevices()
                     ]);
 
-                    // Only update topology if topology actually changed (avoid GPU-heavy redraws)
+                    // Check for topology changes
                     const connectionCountChanged = (this.vpnStatus.connections?.length || 0) !== prevConnectionCount;
                     const deviceCountChanged = (this.devices?.length || 0) !== prevDeviceCount;
 
-                    if (connectionCountChanged || deviceCountChanged) {
+                    // Check if any device routing state changed
+                    const currentRoutingStates = new Set(
+                        this.devices?.filter(d => d.routing_enabled).map(d => d.id) || []
+                    );
+                    const routingStateChanged =
+                        prevRoutingStates.size !== currentRoutingStates.size ||
+                        [...prevRoutingStates].some(id => !currentRoutingStates.has(id)) ||
+                        [...currentRoutingStates].some(id => !prevRoutingStates.has(id));
+
+                    if (connectionCountChanged || deviceCountChanged || routingStateChanged) {
                         this.$nextTick(() => {
                             this.updateTopologyGraph();
                         });
