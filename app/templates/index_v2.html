@@ -1310,6 +1310,11 @@
                         await this.loadDevices();
                         await this.loadVPNStatus();
 
+                        // Update topology graph immediately to reflect changes
+                        this.$nextTick(() => {
+                            this.updateTopologyGraph();
+                        });
+
                         // Clear state after refresh (let backend state be source of truth)
                         setTimeout(() => {
                             delete this.deviceStates[deviceId];
