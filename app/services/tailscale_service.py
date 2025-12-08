@@ -327,7 +327,7 @@ class TailscaleService:
                 return None
 
             container_ip = status["tailscale_ip"]
-            return f"tailscale set --exit-node={container_ip}"
+            return f"tailscale set --exit-node={container_ip} --exit-node-allow-lan-access"
 
         except Exception as e:
             logger.error(f"Failed to get exit node command: {e}")

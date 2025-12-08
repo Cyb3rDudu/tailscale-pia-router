@@ -4,7 +4,7 @@ This guide explains how to configure Tailscale SSH to enable automatic exit node
 
 ## Overview
 
-The PIA router can automatically configure exit nodes on Linux devices using Tailscale SSH. When you toggle routing for a Linux device via the web UI, the container will SSH into the device and run `tailscale set --exit-node=<container-ip>` automatically.
+The PIA router can automatically configure exit nodes on Linux devices using Tailscale SSH. When you toggle routing for a Linux device via the web UI, the container will SSH into the device and run `tailscale set --exit-node=<container-ip> --exit-node-allow-lan-access` automatically.
 
 **Important:** macOS and iOS devices use automatic routing based on PIA connection status and do not require SSH setup.
 
@@ -162,7 +162,7 @@ This should show the PIA VPN IP address.
 3. Test SSH from container manually:
    ```bash
    ssh root@10.36.0.102
-   ssh root@{device-tailscale-ip} "tailscale set --exit-node=100.112.7.98"
+   ssh root@{device-tailscale-ip} "tailscale set --exit-node=100.112.7.98 --exit-node-allow-lan-access"
    ```
 
 ### Exit Node Already Advertising
@@ -198,7 +198,7 @@ ssh {device} "tailscale up --advertise-exit-node=false --accept-dns=false --ssh"
          │ SSH over Tailscale
          ▼
 ┌─────────────────┐
-│ Linux Device    │  Executes: tailscale set --exit-node={container-ip}
+│ Linux Device    │  Executes: tailscale set --exit-node={container-ip} --exit-node-allow-lan-access
 │ (tag:ssh-targets)│
 └─────────────────┘
          │

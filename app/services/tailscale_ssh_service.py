@@ -40,7 +40,7 @@ class TailscaleSSHService:
                 "-o", "StrictHostKeyChecking=no",
                 "-o", "ConnectTimeout=10",
                 f"{username}@{device_target}",
-                f"tailscale set --exit-node={exit_node_ip}"
+                f"tailscale set --exit-node={exit_node_ip} --exit-node-allow-lan-access"
             ]
 
             logger.info(f"Setting exit node on {log_name} to {exit_node_ip} via SSH")

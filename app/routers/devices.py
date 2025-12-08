@@ -276,7 +276,7 @@ async def toggle_device_routing(
                 logger.info(f"Successfully configured exit node via SSH for {device_hostname}")
             else:
                 # SSH failed or not attempted - provide manual command
-                manual_command = f"tailscale set --exit-node={container_ip}"
+                manual_command = f"tailscale set --exit-node={container_ip} --exit-node-allow-lan-access"
 
                 if device_os == "ios":
                     response_message += f". Open Tailscale app → Exit Node → Select 'pia'"
