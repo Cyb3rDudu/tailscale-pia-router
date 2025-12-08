@@ -318,7 +318,7 @@
     <main class="px-6 py-4" style="height: calc(100vh - 140px);">
         <div class="flex items-start space-x-4 h-full">
             <!-- LEFT: Geographic Topology (expandable) -->
-            <div class="topology-container flex-shrink-0 relative" :class="mapExpanded ? 'w-[85%]' : 'w-3/5'">
+            <div class="topology-container flex-shrink-0 relative h-full" :class="mapExpanded ? 'w-[85%]' : 'w-3/5'">
                 <div class="bg-slate-900 rounded-lg border border-slate-800 p-4 h-full flex flex-col">
                     <div class="flex items-center justify-between mb-3">
                         <h2 class="text-lg font-semibold text-white">Network Topology</h2>
@@ -344,7 +344,7 @@
             </div>
 
             <!-- RIGHT: Metrics + Device Routing (stacked) -->
-            <div class="table-container flex-shrink-0 flex flex-col space-y-4 h-full" :class="mapExpanded ? 'w-[15%]' : 'w-2/5'">
+            <div class="table-container flex-shrink-0 flex flex-col space-y-4" :class="mapExpanded ? 'w-[15%]' : 'w-2/5'" style="height: 100%;">
                 <!-- Endpoint Metrics Card (conditionally shown) -->
                 <div x-show="selectedEndpoint !== null" x-cloak class="bg-slate-900 rounded-lg border border-slate-800 p-4">
                     <!-- Header -->
