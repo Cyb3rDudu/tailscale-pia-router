@@ -267,21 +267,21 @@ class RoutingService:
                 # Only raise if it's not a "route exists" error
                 logger.warning(f"Failed to add route for {device_ip}: {result.stderr}")
 
-            # Add MASQUERADE rule for NAT (match by output interface only, not source IP)
-            # This is important because Tailscale may have already masqueraded the packet
+            # Add device-specific MASQUERADE rule for NAT
+            # CRITICAL: Must restrict by source IP to prevent traffic leakage from non-routed devices
             result = subprocess.run(
-                ["iptables", "-t", "nat", "-C", "POSTROUTING", "-o", pia_interface, "-j", "MASQUERADE"],
+                ["iptables", "-t", "nat", "-C", "POSTROUTING", "-s", device_ip, "-o", pia_interface, "-j", "MASQUERADE"],
                 capture_output=True,
                 check=False
             )
 
             if result.returncode != 0:
                 subprocess.run(
-                    ["iptables", "-t", "nat", "-A", "POSTROUTING", "-o", pia_interface, "-j", "MASQUERADE"],
+                    ["iptables", "-t", "nat", "-A", "POSTROUTING", "-s", device_ip, "-o", pia_interface, "-j", "MASQUERADE"],
                     check=True,
                     capture_output=True
                 )
-                logger.info(f"Added MASQUERADE rule for {pia_interface}")
+                logger.info(f"Added device-specific MASQUERADE rule for {device_ip} -> {pia_interface}")
 
             # Add device-specific FORWARD rules to prevent traffic leakage
             await self.ensure_forward_rules(pia_interface, device_ip)
