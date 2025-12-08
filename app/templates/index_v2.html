@@ -319,7 +319,7 @@
         <div class="flex items-start space-x-4 h-full">
             <!-- LEFT: Geographic Topology (expandable) -->
             <div class="topology-container flex-shrink-0 relative h-full" :class="mapExpanded ? 'w-[85%]' : 'w-3/5'">
-                <div class="bg-slate-900 rounded-lg border border-slate-800 h-full flex flex-col" style="padding: 16px;">
+                <div class="bg-slate-900 h-full flex flex-col" style="padding: 16px; border: 1px solid rgb(30, 41, 59); border-radius: 8px;">
                     <div class="flex items-center justify-between" style="margin-bottom: 12px;">
                         <h2 class="text-lg font-semibold text-white">Network Topology</h2>
 
@@ -408,7 +408,7 @@
                 </div>
 
                 <!-- Device Routing Card -->
-                <div class="bg-slate-900 rounded-lg border border-slate-800 flex-1 min-h-0 flex flex-col" style="padding: 16px;">
+                <div class="bg-slate-900 flex-1 min-h-0 flex flex-col" style="padding: 16px; border: 1px solid rgb(30, 41, 59); border-radius: 8px;">
                     <div class="flex items-center justify-between" style="margin-bottom: 12px;">
                         <h2 class="text-lg font-semibold text-white" x-show="!mapExpanded">Device Routing</h2>
                         <h2 class="text-sm font-semibold text-white" x-show="mapExpanded">Devices</h2>
