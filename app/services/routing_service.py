@@ -283,8 +283,8 @@ class RoutingService:
                 )
                 logger.info(f"Added MASQUERADE rule for {pia_interface}")
 
-            # Add FORWARD rules for this PIA interface if not already present
-            await self.ensure_forward_rules(pia_interface)
+            # Add device-specific FORWARD rules to prevent traffic leakage
+            await self.ensure_forward_rules(pia_interface, device_ip)
 
             # Ensure DNS interception rules to prevent DNS leaks
             await self.ensure_dns_interception()
@@ -358,6 +358,43 @@ class RoutingService:
                 if not found_rule:
                     break
 
+            # Remove device-specific FORWARD rules for all PIA interfaces
+            # Get list of all pia-* interfaces
+            result = subprocess.run(
+                ["ip", "link", "show"],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+
+            pia_interfaces = []
+            for line in result.stdout.split('\n'):
+                if 'pia-' in line:
+                    # Extract interface name (format: "5: pia-sg: <POINTOPOINT,NOARP,UP,LOWER_UP>")
+                    parts = line.split(':')
+                    if len(parts) >= 2:
+                        iface = parts[1].strip()
+                        if iface.startswith('pia-'):
+                            pia_interfaces.append(iface)
+
+            # Remove FORWARD rules for this device on all PIA interfaces
+            for pia_iface in pia_interfaces:
+                # Remove outbound rule (device -> VPN)
+                subprocess.run(
+                    ["iptables", "-D", "FORWARD", "-i", TAILSCALE_INTERFACE, "-s", device_ip, "-o", pia_iface, "-j", "ACCEPT"],
+                    capture_output=True,
+                    check=False
+                )
+
+                # Remove inbound rule (VPN -> device)
+                subprocess.run(
+                    ["iptables", "-D", "FORWARD", "-i", pia_iface, "-d", device_ip, "-o", TAILSCALE_INTERFACE, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
+                    capture_output=True,
+                    check=False
+                )
+
+            logger.info(f"Removed FORWARD rules for {device_ip}")
+
             # Remove from tracking
             del self.device_table_map[device_ip]
             self.enabled_devices.discard(device_ip)
@@ -368,45 +405,68 @@ class RoutingService:
             logger.error(f"Failed to disable routing for device {device_ip}: {e}")
             return False
 
-    async def ensure_forward_rules(self, pia_interface: str) -> bool:
+    async def ensure_forward_rules(self, pia_interface: str, device_ip: str = None) -> bool:
         """Ensure FORWARD rules exist for a PIA interface.
 
         Args:
             pia_interface: PIA interface name (e.g., pia-de, pia-sg)
+            device_ip: Optional device IP to restrict the rule to a specific device
 
         Returns:
             True if successful
         """
         try:
-            # Allow forwarding from Tailscale to PIA interface
-            result = subprocess.run(
-                ["iptables", "-C", "FORWARD", "-i", TAILSCALE_INTERFACE, "-o", pia_interface, "-j", "ACCEPT"],
-                capture_output=True,
-                check=False
-            )
+            if device_ip:
+                # Device-specific FORWARD rule (prevents traffic leakage from non-routed devices)
+                # Check if rule exists
+                check_cmd = ["iptables", "-C", "FORWARD", "-i", TAILSCALE_INTERFACE, "-s", device_ip, "-o", pia_interface, "-j", "ACCEPT"]
+                result = subprocess.run(check_cmd, capture_output=True, check=False)
 
-            if result.returncode != 0:
-                subprocess.run(
-                    ["iptables", "-A", "FORWARD", "-i", TAILSCALE_INTERFACE, "-o", pia_interface, "-j", "ACCEPT"],
-                    check=True,
-                    capture_output=True
+                if result.returncode != 0:
+                    # Rule doesn't exist, add it
+                    add_cmd = ["iptables", "-A", "FORWARD", "-i", TAILSCALE_INTERFACE, "-s", device_ip, "-o", pia_interface, "-j", "ACCEPT"]
+                    subprocess.run(add_cmd, check=True, capture_output=True)
+                    logger.info(f"Added device-specific FORWARD rule: {device_ip} -> {pia_interface}")
+
+                # Return traffic (destination-based, no need for source filter)
+                check_cmd = ["iptables", "-C", "FORWARD", "-i", pia_interface, "-d", device_ip, "-o", TAILSCALE_INTERFACE, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"]
+                result = subprocess.run(check_cmd, capture_output=True, check=False)
+
+                if result.returncode != 0:
+                    add_cmd = ["iptables", "-A", "FORWARD", "-i", pia_interface, "-d", device_ip, "-o", TAILSCALE_INTERFACE, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"]
+                    subprocess.run(add_cmd, check=True, capture_output=True)
+                    logger.info(f"Added device-specific FORWARD rule: {pia_interface} -> {device_ip} (established)")
+            else:
+                # Legacy global rule (deprecated - should not be used)
+                logger.warning(f"Creating global FORWARD rule for {pia_interface} without device restriction - this may cause traffic leakage")
+
+                result = subprocess.run(
+                    ["iptables", "-C", "FORWARD", "-i", TAILSCALE_INTERFACE, "-o", pia_interface, "-j", "ACCEPT"],
+                    capture_output=True,
+                    check=False
                 )
-                logger.info(f"Added FORWARD rule Tailscale -> {pia_interface}")
 
-            # Allow return traffic
-            result = subprocess.run(
-                ["iptables", "-C", "FORWARD", "-i", pia_interface, "-o", TAILSCALE_INTERFACE, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
-                capture_output=True,
-                check=False
-            )
+                if result.returncode != 0:
+                    subprocess.run(
+                        ["iptables", "-A", "FORWARD", "-i", TAILSCALE_INTERFACE, "-o", pia_interface, "-j", "ACCEPT"],
+                        check=True,
+                        capture_output=True
+                    )
+                    logger.info(f"Added global FORWARD rule Tailscale -> {pia_interface}")
 
-            if result.returncode != 0:
-                subprocess.run(
-                    ["iptables", "-A", "FORWARD", "-i", pia_interface, "-o", TAILSCALE_INTERFACE, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
-                    check=True,
-                    capture_output=True
+                result = subprocess.run(
+                    ["iptables", "-C", "FORWARD", "-i", pia_interface, "-o", TAILSCALE_INTERFACE, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
+                    capture_output=True,
+                    check=False
                 )
-                logger.info(f"Added FORWARD rule {pia_interface} -> Tailscale (established)")
+
+                if result.returncode != 0:
+                    subprocess.run(
+                        ["iptables", "-A", "FORWARD", "-i", pia_interface, "-o", TAILSCALE_INTERFACE, "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT"],
+                        check=True,
+                        capture_output=True
+                    )
+                    logger.info(f"Added global FORWARD rule {pia_interface} -> Tailscale (established)")
 
             return True
 
