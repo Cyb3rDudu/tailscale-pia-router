@@ -358,15 +358,15 @@
                     <div class="grid grid-cols-2 gap-3 mb-4">
                         <div class="bg-slate-800 rounded p-3 border border-slate-700">
                             <div class="text-xs text-slate-400 mb-1 font-medium">Download</div>
-                            <div class="text-base font-bold text-green-400" x-text="getCurrentDownloadRate()"></div>
-                            <div class="text-xs text-slate-500 mt-1">
+                            <div class="text-base font-bold text-green-400 font-mono tabular-nums" style="min-height: 24px;" x-text="getCurrentDownloadRate()"></div>
+                            <div class="text-xs text-slate-500 mt-1 font-mono tabular-nums">
                                 <span class="text-slate-400">avg</span> <span x-text="getAverageDownloadRate()"></span>
                             </div>
                         </div>
                         <div class="bg-slate-800 rounded p-3 border border-slate-700">
                             <div class="text-xs text-slate-400 mb-1 font-medium">Upload</div>
-                            <div class="text-base font-bold text-blue-400" x-text="getCurrentUploadRate()"></div>
-                            <div class="text-xs text-slate-500 mt-1">
+                            <div class="text-base font-bold text-blue-400 font-mono tabular-nums" style="min-height: 24px;" x-text="getCurrentUploadRate()"></div>
+                            <div class="text-xs text-slate-500 mt-1 font-mono tabular-nums">
                                 <span class="text-slate-400">avg</span> <span x-text="getAverageUploadRate()"></span>
                             </div>
                         </div>
