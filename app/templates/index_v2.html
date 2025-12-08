@@ -1253,6 +1253,11 @@
 
                         await this.loadDevices();
                         await this.loadVPNStatus();
+
+                        // Update topology graph immediately to reflect region change
+                        this.$nextTick(() => {
+                            this.updateTopologyGraph();
+                        });
                     } catch (error) {
                         alert('Failed to set device region: ' + error.message);
                     }

@@ -453,15 +453,20 @@ async def set_device_region(
         # Check if routing was previously enabled for this device
         was_enabled = await DeviceRoutingDB.is_enabled(device_id)
 
-        # If routing was enabled with a different region, disable it first
+        # If routing was enabled with a different region, reconnect to new region
         if was_enabled and old_region_id and old_region_id != region_select.region_id:
             ip_addresses = json.loads(device["ip_addresses"])
             if ip_addresses:
                 device_ip = ip_addresses[0]
                 routing_service = get_routing_service()
+
+                # First, disable old region
                 await routing_service.disable_device_routing(device_ip)
-                await DeviceRoutingDB.set_enabled(device_id, False)
-                logger.info(f"Disabled routing for {device['hostname']} due to region change")
+                logger.info(f"Disabled old region {old_region_id} for {device['hostname']}")
+
+                # Then reconnect to new region
+                await routing_service.enable_device_routing(device_ip, region_select.region_id)
+                logger.info(f"Reconnected {device['hostname']} to new region {region_select.region_id}")
 
         # Check if old region needs cleanup
         if old_region_id and old_region_id != region_select.region_id:
