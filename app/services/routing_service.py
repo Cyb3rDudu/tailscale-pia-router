@@ -126,6 +126,25 @@ class RoutingService:
                 )
                 logger.info("Added FORWARD rule PIA -> Tailscale (established)")
 
+            # Add routing policy rule to bypass WireGuard's catch-all table for Tailscale exit node traffic
+            # WireGuard creates rule "31127: not from all fwmark 0xcafd lookup 51965" which routes
+            # ALL non-WireGuard traffic through the VPN. We need to exempt Tailscale exit node traffic.
+            # Priority 30000 ensures this rule is checked BEFORE WireGuard's rule 31127.
+            check_rule = subprocess.run(
+                ["ip", "rule", "list"],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+
+            if "from all iif tailscale0 lookup main" not in check_rule.stdout:
+                subprocess.run(
+                    ["ip", "rule", "add", "from", "all", "iif", TAILSCALE_INTERFACE, "lookup", "main", "priority", "30000"],
+                    check=True,
+                    capture_output=True
+                )
+                logger.info("Added routing bypass rule for Tailscale exit node traffic (prevents WireGuard table 51965)")
+
             logger.info("Base routing rules configured")
             return True
 
