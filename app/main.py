@@ -341,6 +341,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to load Tailscale API key: {e}")
 
+    # Setup base routing rules (including Tailscale exit node bypass)
+    try:
+        from app.services.routing_service import get_routing_service
+        routing_service = get_routing_service()
+        await routing_service.setup_base_rules()
+        logger.info("Base routing rules configured")
+    except Exception as e:
+        logger.error(f"Failed to setup base routing rules: {e}")
+
     # Restore routing rules for enabled devices
     try:
         logger.info("Restoring routing rules for enabled devices...")
