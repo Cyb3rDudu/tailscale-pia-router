@@ -924,6 +924,10 @@
                     const prevConnectionCount = this.vpnStatus.connections?.length || 0;
                     const prevDeviceCount = this.devices?.length || 0;
 
+                    // Store previous device list (to detect adds/removes/online status changes)
+                    const prevDeviceSet = new Set(this.devices?.map(d => d.id) || []);
+                    const prevOnlineSet = new Set(this.devices?.filter(d => d.online).map(d => d.id) || []);
+
                     // Store previous routing states and region assignments
                     const prevRoutingStates = new Set(
                         this.devices?.filter(d => d.routing_enabled).map(d => d.id) || []
@@ -943,6 +947,20 @@
                     const connectionCountChanged = (this.vpnStatus.connections?.length || 0) !== prevConnectionCount;
                     const deviceCountChanged = (this.devices?.length || 0) !== prevDeviceCount;
 
+                    // Check if device list changed (additions or removals)
+                    const currentDeviceSet = new Set(this.devices?.map(d => d.id) || []);
+                    const deviceListChanged =
+                        currentDeviceSet.size !== prevDeviceSet.size ||
+                        [...currentDeviceSet].some(id => !prevDeviceSet.has(id)) ||
+                        [...prevDeviceSet].some(id => !currentDeviceSet.has(id));
+
+                    // Check if any device's online status changed
+                    const currentOnlineSet = new Set(this.devices?.filter(d => d.online).map(d => d.id) || []);
+                    const onlineStatusChanged =
+                        currentOnlineSet.size !== prevOnlineSet.size ||
+                        [...currentOnlineSet].some(id => !prevOnlineSet.has(id)) ||
+                        [...prevOnlineSet].some(id => !currentOnlineSet.has(id));
+
                     // Check if any device routing state changed
                     const currentRoutingStates = new Set(
                         this.devices?.filter(d => d.routing_enabled).map(d => d.id) || []
@@ -960,7 +978,7 @@
                         prevRegionMap.get(id) !== region
                     );
 
-                    if (connectionCountChanged || deviceCountChanged || routingStateChanged || regionChanged) {
+                    if (connectionCountChanged || deviceCountChanged || deviceListChanged || onlineStatusChanged || routingStateChanged || regionChanged) {
                         this.$nextTick(() => {
                             this.updateTopologyGraph();
                         });
