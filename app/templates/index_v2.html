@@ -2184,6 +2184,29 @@
                 this.renderCanvasChart(history);
             },
 
+            // Apply moving average smoothing to data
+            smoothData(dataArray, windowSize = 3) {
+                if (dataArray.length < windowSize) return dataArray;
+
+                const smoothed = [];
+                for (let i = 0; i < dataArray.length; i++) {
+                    let sum = 0;
+                    let count = 0;
+
+                    // Average over window centered at current point
+                    for (let j = Math.max(0, i - Math.floor(windowSize / 2));
+                         j <= Math.min(dataArray.length - 1, i + Math.floor(windowSize / 2));
+                         j++) {
+                        sum += dataArray[j];
+                        count++;
+                    }
+
+                    smoothed.push(sum / count);
+                }
+
+                return smoothed;
+            },
+
             renderCanvasChart(data) {
                 const canvas = document.getElementById('throughput-canvas');
                 if (!canvas) return;
@@ -2198,9 +2221,13 @@
 
                 if (!data || data.rx.length < 2) return;
 
+                // Apply smoothing to data (3-point moving average)
+                const smoothedRx = this.smoothData(data.rx, 3);
+                const smoothedTx = this.smoothData(data.tx, 3);
+
                 // Find max value for Y-scale (calculated ONCE, not per frame)
-                const maxRx = Math.max(...data.rx);
-                const maxTx = Math.max(...data.tx);
+                const maxRx = Math.max(...smoothedRx);
+                const maxTx = Math.max(...smoothedTx);
                 const maxValue = Math.max(maxRx, maxTx);
                 if (maxValue === 0) return;
 
@@ -2290,11 +2317,11 @@
                     ctx.stroke();
                 };
 
-                // Draw download line (green) - SMOOTH CURVES
-                drawSmoothCurve(data.rx, '#22c55e');
+                // Draw download line (green) - SMOOTH CURVES with smoothed data
+                drawSmoothCurve(smoothedRx, '#22c55e');
 
-                // Draw upload line (blue) - SMOOTH CURVES
-                drawSmoothCurve(data.tx, '#3b82f6');
+                // Draw upload line (blue) - SMOOTH CURVES with smoothed data
+                drawSmoothCurve(smoothedTx, '#3b82f6');
 
                 // Optional: Draw small points on lines (only if performance allows)
                 // Commented out by default for maximum performance
