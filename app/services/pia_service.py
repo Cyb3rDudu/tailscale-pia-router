@@ -28,9 +28,19 @@ class PIAService:
         transport = httpx.AsyncHTTPTransport(local_address="10.36.0.102", verify=False)
         self.client = httpx.AsyncClient(timeout=30.0, verify=False, transport=transport)
 
+        # Cache for get_active_connections to reduce CPU load
+        self._active_connections_cache = None
+        self._active_connections_cache_time = 0
+        self._cache_ttl = 2.0  # Cache for 2 seconds
+
     async def close(self):
         """Close the HTTP client."""
         await self.client.aclose()
+
+    def _invalidate_active_connections_cache(self):
+        """Invalidate the active connections cache."""
+        self._active_connections_cache = None
+        self._active_connections_cache_time = 0
 
     def _get_interface_name(self, region_id: str) -> str:
         """Get WireGuard interface name for a region.
@@ -541,6 +551,8 @@ method=disabled
             except Exception as e:
                 logger.warning(f"Could not add bypass rule for {region_id}: {e}")
 
+            # Invalidate cache since connection state changed
+            self._invalidate_active_connections_cache()
             return True
 
         except subprocess.CalledProcessError as e:
@@ -576,6 +588,9 @@ method=disabled
             )
 
             logger.info(f"PIA VPN connection {interface_name} disconnected and deleted")
+
+            # Invalidate cache since connection state changed
+            self._invalidate_active_connections_cache()
             return True
 
         except Exception as e:
@@ -605,6 +620,9 @@ method=disabled
             )
 
             logger.info(f"PIA VPN connected via NetworkManager: {result.stdout}")
+
+            # Invalidate cache since connection state changed
+            self._invalidate_active_connections_cache()
             return True
 
         except subprocess.CalledProcessError as e:
@@ -626,12 +644,17 @@ method=disabled
             )
 
             logger.info(f"PIA VPN disconnected via NetworkManager: {result.stdout}")
+
+            # Invalidate cache since connection state changed
+            self._invalidate_active_connections_cache()
             return True
 
         except subprocess.CalledProcessError as e:
             # If connection doesn't exist or already down, that's fine
             if "not an active connection" in e.stderr.lower() or "no active connection" in e.stderr.lower():
                 logger.info("PIA VPN already disconnected")
+                # Invalidate cache since connection state changed
+                self._invalidate_active_connections_cache()
                 return True
 
             logger.error(f"Failed to disconnect PIA VPN: {e.stderr}")
@@ -737,11 +760,19 @@ method=disabled
             return None
 
     async def get_active_connections(self) -> List[Dict]:
-        """Get list of all active PIA connections.
+        """Get list of all active PIA connections with caching.
 
         Returns:
             List of active connection info dicts with region_id and interface
         """
+        import time
+
+        # Check cache first to reduce CPU load
+        now = time.time()
+        if (self._active_connections_cache is not None and
+            now - self._active_connections_cache_time < self._cache_ttl):
+            return self._active_connections_cache
+
         try:
             # Get list of active interface names from nmcli
             result = subprocess.run(
@@ -784,7 +815,11 @@ method=disabled
                         })
                         seen_regions.add(region_id)
 
-            logger.info(f"Found {len(active_connections)} active PIA connections")
+            # Update cache
+            self._active_connections_cache = active_connections
+            self._active_connections_cache_time = now
+
+            logger.info(f"Found {len(active_connections)} active PIA connections (cache updated)")
             return active_connections
 
         except Exception as e:
