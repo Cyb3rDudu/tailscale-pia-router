@@ -419,6 +419,10 @@ method=disabled
             )
             logger.info("Reloaded NetworkManager connections")
 
+            # Give NetworkManager time to process the new connection
+            import time
+            time.sleep(1)
+
         except Exception as e:
             logger.error(f"Failed to configure WireGuard in NetworkManager: {e}")
             raise
