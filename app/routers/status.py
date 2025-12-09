@@ -283,7 +283,7 @@ async def get_geolocation(ip: str):
 async def websocket_vpn_status(websocket: WebSocket):
     """WebSocket endpoint for real-time VPN status streaming.
 
-    Sends VPN connection status updates every 250ms (4 samples/second) including:
+    Sends VPN connection status updates every 500ms (2 samples/second) including:
     - Active connections with throughput data
     - Interface details (handshake, transfer stats)
     """
@@ -329,8 +329,8 @@ async def websocket_vpn_status(websocket: WebSocket):
                     "timestamp": asyncio.get_event_loop().time()
                 })
 
-                # Wait 250ms before next update (4 samples/second)
-                await asyncio.sleep(0.25)
+                # Wait 500ms before next update (2 samples/second)
+                await asyncio.sleep(0.5)
 
             except Exception as e:
                 logger.error(f"Error in WebSocket update loop: {e}")
@@ -340,7 +340,7 @@ async def websocket_vpn_status(websocket: WebSocket):
                     "active_count": 0,
                     "connections": []
                 })
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(0.5)
 
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected")
