@@ -416,8 +416,10 @@ method=disabled
             # Write the configuration
             nm_conn_path.write_text(nm_config)
 
-            # Set correct permissions (NetworkManager requires 0600)
+            # Set correct permissions and ownership (NetworkManager requires 0600 and root:root)
             nm_conn_path.chmod(0o600)
+            import os
+            os.chown(nm_conn_path, 0, 0)  # Ensure file is owned by root:root
 
             logger.info(f"Wrote NetworkManager WireGuard configuration for {interface_name} to {nm_conn_path}")
 
